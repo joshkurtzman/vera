@@ -1,0 +1,296 @@
+{
+	"default_icon" : "security_sensor_default.png",
+	"flashicon" : "icons/devices.swf",
+	"inScene" : "0",
+	"DisplayStatus" : {},
+	"doc_url" : {
+		"doc_forced_url" : {
+			"text" : ""
+		}
+	},
+	"Tabs" : [{
+			"Label" : {
+				"lang_tag" : "vista_alarm_panel",
+				"text" : "Vista Alarm Panel"
+			},
+			"Position" : "0",
+			"TabType" : "flash",
+			"Control" : [{
+					"ControlType" : "label",
+					"Label" : {
+						"lang_tag" : "device_settings_page",
+						"text" : "Partitions:"
+					},
+					"Display" : {
+						"Top" : 0,
+						"Left" : 50,
+						"Width" : 70,
+						"Height" : 20
+					}
+				}, {
+					"ControlType" : "variable",
+					"Display" : {
+						"Service" : "urn:micasaverde-com:serviceId:VistaAlarmPanel1",
+						"Variable" : "ActivePartitions",
+						"Top" : 0,
+						"Left" : 120,
+						"Width" : 50,
+						"Height" : 20
+					}
+				}, {
+					"ControlType" : "label",
+					"Label" : {
+						"lang_tag" : "device_settings_page",
+						"text" : "Zones:"
+					},
+					"Display" : {
+						"Top" : 20,
+						"Left" : 50,
+						"Width" : 70,
+						"Height" : 20
+					}
+				}, {
+					"ControlType" : "variable",
+					"Display" : {
+						"Service" : "urn:micasaverde-com:serviceId:VistaAlarmPanel1",
+						"Variable" : "ActiveZones",
+						"Top" : 20,
+						"Left" : 120,
+						"Width" : 50,
+						"Height" : 20
+					}
+				}, {
+					"ControlType" : "label",
+					"Label" : {
+						"lang_tag" : "device_settings_page",
+						"text" : "Outputs:"
+					},
+					"Display" : {
+						"Top" : 40,
+						"Left" : 50,
+						"Width" : 70,
+						"Height" : 20
+					}
+				}, {
+					"ControlType" : "variable",
+					"Display" : {
+						"Service" : "urn:micasaverde-com:serviceId:VistaAlarmPanel1",
+						"Variable" : "ActiveOutputs",
+						"Top" : 40,
+						"Left" : 120,
+						"Width" : 50,
+						"Height" : 20
+					}
+				}, {
+					"ControlType" : "label",
+					"Label" : {
+						"lang_tag" : "device_settings_page",
+						"text" : "Zone Conf:"
+					},
+					"Display" : {
+						"Top" : 60,
+						"Left" : 50,
+						"Width" : 200,
+						"Height" : 20
+					}
+				}, {
+					"ControlType" : "input",
+					"ID" : "ZoneInfo",
+					"Display" : {
+						"Top" : 60,
+						"Left" : 120,
+						"Width" : 100,
+						"Height" : 18
+					}
+				}, {
+					"ControlType" : "label",
+					"Label" : {
+						"lang_tag" : "device_settings_page",
+						"text" : "Outputs"
+					},
+					"Display" : {
+						"Top" : 80,
+						"Left" : 50,
+						"Width" : 200,
+						"Height" : 20
+					}
+				}, {
+					"ControlType" : "input",
+					"ID" : "OutputInfo",
+					"Display" : {
+						"Top" : 80,
+						"Left" : 120,
+						"Width" : 100,
+						"Height" : 18
+					}
+				}
+			]
+		}, {
+			"Label" : {
+				"lang_tag" : "settings",
+				"text" : "Settings"
+			},
+			"Position" : "1",
+			"TabType" : "javascript",
+			"ScriptName" : "J_VistaAlarmPanel2.js",
+			"Function" : "VistaAlarm.showSettings"
+		}, {
+			"Label" : {
+				"lang_tag" : "advanced",
+				"text" : "Advanced"
+			},
+			"Position" : "2",
+			"TabType" : "javascript",
+			"ScriptName" : "shared.js",
+			"Function" : "advanced_device"
+		}, {
+			"Label" : {
+				"lang_tag" : "notifications",
+				"text" : "Notifications"
+			},
+			"Position" : "3",
+			"TabType" : "javascript",
+			"ScriptName" : "shared.js",
+			"Function" : "device_notifications"
+		}
+	],
+	"eventList2" : [{
+			"id" : 1,
+			"label" : {
+				"lang_tag" : "fire_key_alarm",
+				"text" : "Fire Key Alarm"
+			},
+			"serviceId" : "urn:micasaverde-com:serviceId:VistaAlarmPanel1",
+			"argumentList" : [{
+					"id" : 1,
+					"dataType" : "boolean",
+					"defaultValue" : "1",
+					"allowedValueList" : [{
+							"Cleared" : "0",
+							"HumanFriendlyText" : {
+								"lang_tag" : "fire_alarm_cleared",
+								"text" : "_DEVICE_NAME_: Fire Alarm is Cleared"
+							}
+						}, {
+							"Triggered" : "1",
+							"HumanFriendlyText" : {
+								"lang_tag" : "fire_alarm_triggered",
+								"text" : "_DEVICE_NAME_: Fire Alarm is Triggered"
+							}
+						}
+					],
+					"name" : "FireKeyAlarm",
+					"comparisson" : "=",
+					"prefix" : {
+						"lang_tag" : "when",
+						"text" : "When?"
+					},
+					"suffix" : {}
+				}
+			]
+		}, {
+			"id" : 2,
+			"label" : {
+				"lang_tag" : "auxiliary_key_alarm",
+				"text" : "Auxiliary Key Alarm"
+			},
+			"serviceId" : "urn:micasaverde-com:serviceId:VistaAlarmPanel1",
+			"argumentList" : [{
+					"id" : 1,
+					"dataType" : "boolean",
+					"defaultValue" : "1",
+					"allowedValueList" : [{
+							"Cleared" : "0",
+							"HumanFriendlyText" : {
+								"lang_tag" : "aux_alarm_cleared",
+								"text" : "_DEVICE_NAME_: Auxiliary Alarm is Cleared"
+							}
+						}, {
+							"Triggered" : "1",
+							"HumanFriendlyText" : {
+								"lang_tag" : "aux_alarm_triggered",
+								"text" : "_DEVICE_NAME_: Auxiliary Alarm is Triggered"
+							}
+						}
+					],
+					"name" : "AuxKeyAlarm",
+					"comparisson" : "=",
+					"prefix" : {
+						"lang_tag" : "when",
+						"text" : "When?"
+					},
+					"suffix" : {}
+				}
+			]
+		}, {
+			"id" : 3,
+			"label" : {
+				"lang_tag" : "panic_key_alarm",
+				"text" : "Panic Key Alarm"
+			},
+			"serviceId" : "urn:micasaverde-com:serviceId:VistaAlarmPanel1",
+			"argumentList" : [{
+					"id" : 1,
+					"dataType" : "boolean",
+					"defaultValue" : "1",
+					"allowedValueList" : [{
+							"Cleared" : "0",
+							"HumanFriendlyText" : {
+								"lang_tag" : "panic_alarm_cleared",
+								"text" : "_DEVICE_NAME_: Panic Alarm is Cleared"
+							}
+						}, {
+							"Triggered" : "1",
+							"HumanFriendlyText" : {
+								"lang_tag" : "panic_alarm_triggered",
+								"text" : "_DEVICE_NAME_: Panic Alarm is Triggered"
+							}
+						}
+					],
+					"name" : "PanicKeyAlarm",
+					"comparisson" : "=",
+					"prefix" : {
+						"lang_tag" : "when",
+						"text" : "When?"
+					},
+					"suffix" : {}
+				}
+			]
+		}, {
+			"id" : 4,
+			"label" : {
+				"lang_tag" : "auxiliary_input_alarm",
+				"text" : "Auxiliary Input Alarm"
+			},
+			"serviceId" : "urn:micasaverde-com:serviceId:VistaAlarmPanel1",
+			"argumentList" : [{
+					"id" : 1,
+					"dataType" : "boolean",
+					"defaultValue" : "1",
+					"allowedValueList" : [{
+							"Cleared" : "0",
+							"HumanFriendlyText" : {
+								"lang_tag" : "aux_alarm_cleared",
+								"text" : "_DEVICE_NAME_: Auxiliary Input Alarm is Cleared"
+							}
+						}, {
+							"Triggered" : "1",
+							"HumanFriendlyText" : {
+								"lang_tag" : "aux_alarm_triggered",
+								"text" : "_DEVICE_NAME_: Auxiliary Input Alarm is Triggered"
+							}
+						}
+					],
+					"name" : "AuxInputAlarm",
+					"comparisson" : "=",
+					"prefix" : {
+						"lang_tag" : "when",
+						"text" : "When?"
+					},
+					"suffix" : {}
+				}
+			]
+		}
+	],
+	"DeviceType" : "urn:schemas-micasaverde-com:device:AlarmPanel:1"
+}

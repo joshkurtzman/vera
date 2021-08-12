@@ -1,0 +1,487 @@
+<?xml version="1.0" encoding="ISO-8859-1"?>
+<implementation>
+<functions>
+
+--add fade field to devices 
+--set funtion to call writedmxchannel using the fade value
+--Set random colors and make additional
+--RGB create 3 custom colors to safe with device
+
+
+local SID = {
+	["ARDUINODMX"]   	= "urn:micasaverde-com:serviceId:ArduinoDMX",
+	["RGB"] 			= "urn:micasaverde-com:serviceId:RGB1",
+	["COLOR"] 			= "urn:micasaverde-com:serviceId:Color1",
+	["DIMMING"]  		= "urn:upnp-org:serviceId:Dimming1",
+	["SWITCH"]			= "urn:upnp-org:serviceId:SwitchPower1"
+}
+
+local DEVTYPE = {
+	["ARDUINODMX"]   	= "urn:schemas-micasaverde-com:device:ArduinoDMX",
+	["RGB"] 			= "urn:schemas-upnp-org:device:DimmableRGBLight:1",
+	["SINGLE"]  		= "urn:schemas-upnp-org:device:DimmableLight:1"
+}
+
+
+
+function WriteDMXChannel(Channel, ChanLevel, FadeSpeed)
+	local FadeSpeed = FadeSpeed or 0
+	
+	-- need to check if between 0 and 255
+	local ChanLevel = math.floor(ChanLevel+0.5) --round it just in case
+	luup.log("Set Channel: " .. Channel .. "to Level: " .. ChanLevel)
+	  
+	  -- need to handle failures/ inplement fading on arduino
+	
+	if (FadeSpeed > 0) then
+		luup.io.write(FadeSpeed .. "f" ..  Channel .. "c" .. ChanLevel .. "w")
+	else
+		luup.io.write(Channel .. "c" .. ChanLevel .. "w")
+	end
+	
+	--return value eventually- configure arduino to confirm
+end
+
+ 
+function updateSingle(lul_device,FadeSpeed)
+		local FadeSpeed = FadeSpeed or 0
+		local LoadLevel, tstamp = luup.variable_get(SID.DIMMING, "LoadLevelStatus" , lul_device)
+		local LoadLevel = tonumber(LoadLevel) * 2.55
+		local Chan = luup.devices[lul_device].id:match("^DMX1%-(%d+)$") 
+		WriteDMXChannel(Chan, LoadLevel, FadeSpeed)
+end
+
+
+function UpdateRGB(lul_device, FadeSpeed)
+		local FadeSpeed = FadeSpeed or 0
+		local Red ={}
+		local Blue = {}
+		local Green ={} 
+		local AltID = luup.attr_get('altid', lul_device)
+		local ParentID = tonumber(luup.attr_get('id_parent', lul_device))
+		local LoadLevel, tstamp = luup.variable_get(SID.DIMMING, "LoadLevelStatus" , lul_device)
+		local RGB = luup.variable_get(SID.COLOR, "CurrentColor" , lul_device) or "R255,B255,G255"
+		
+		
+		Red["ChanLevel"], Green["ChanLevel"], Blue["ChanLevel"] = RGB:match("R([^,]+),G([^,]+),B([^,]+)")
+		Red["Channel"], Green["Channel"], Blue["Channel"] = AltID:match("^DMX1%-RGB%-(%d+)-(%d+)-(%d+)$")	
+	
+--	luup.log("ArduinoDMX Log:" .. LoadLevel .. "  " .. lul_device .. "  " .. Red["ChanLevel"] )
+	
+		Red["ChanLevel"] = (tonumber(LoadLevel)/100) * tonumber(Red["ChanLevel"])
+		Green["ChanLevel"] = (tonumber(LoadLevel)/100) * tonumber(Green["ChanLevel"])
+		Blue["ChanLevel"] = (tonumber(LoadLevel)/100) * tonumber(Blue["ChanLevel"])
+		
+		WriteDMXChannel(Red["Channel"], Red["ChanLevel"],FadeSpeed)
+		WriteDMXChannel(Green["Channel"], Green["ChanLevel"],FadeSpeed)
+		WriteDMXChannel(Blue["Channel"], Blue["ChanLevel"],FadeSpeed)
+
+end		
+		
+ function ArduinoDMXStartup(lul_device)
+ 
+ local ipAddress, trash, ipPort = string.match(luup.devices[lul_device].ip, "^(.*)(:(%d+))$")
+
+
+		
+        if ((ipAddress ~= nil) and (ipAddress ~= "")) then
+            if (ipPort == nil) then
+                ipPort = 5000
+            end
+			
+			os.execute("ser2net -C 5000:raw:0:/dev/ttyACM0:9600")
+			
+            luup.log(string.format("Running Network Attached ArduinoDMX.xml on %s:%s Device# %s, id %s",
+                ipAddress, ipPort, tostring(lul_device), luup.devices[lul_device].id))
+				luup.io.open(lul_device, ipAddress, ipPort)
+				 luup.sleep("100")
+			local RES = luup.io.write(" ") -- send blank line so that arduino is ready for us to set all the channels to current value
+			
+			-- if (RES == false) then
+				-- luup.log('ArduinoDMX Not connected', 1)
+				-- luup.task('Choose the Serial Port for the', 2, 'ArduinoDMX Controller', -1)
+				-- return false,"Cannot connect", "ArduinoDMX"
+			-- end
+			
+        
+            luup.log("Running Serial Attached I_ArduinoDMX.xml #" .. tostring(lul_device)
+                .. " starting with id " .. luup.devices[lul_device].id)
+        end
+
+		
+		
+ -- -- Fix to check for IP address
+
+	 -- if (luup.io.is_connected(lul_device) == false) then
+	--	 luup.log('No port for ArduinoDMX', 1)
+	--	 luup.task('Choose the Serial Port for the', 2, 'ArduinoDMX Controller', -1)
+	--	 return false,"Cannot connect", "ArduinoDMX"
+	--   end
+	  
+  
+	--local ChildDevices = {}	
+   
+    luup.log("starting device: " .. tostring(lul_device))
+        
+        -- Tell Vera that we are going start creating children --
+        
+   local rootdev = luup.chdev.start(lul_device)   
+   local CurrentDevices = {}
+   
+	
+	--change to look at variables and create children 
+	local DMXlist, tstamp = luup.variable_get(SID.ARDUINODMX, "DMXdevices" , lul_device)
+	--split up dev list and store in DMXDevices
+		
+	  if(DMXlist == nil) then
+			luup.variable_set(SID.ARDUINODMX, "DMXdevices", "1,Single;", lul_device)
+			DMXlist = "1,Single"
+		end
+		luup.log("ArduinoDMX Device List " .. DMXlist )
+		
+	
+	for w in (DMXlist .. ";"):gmatch("([^;]*);") do 
+		w = w: gsub ("&lt;br&gt;", '') -- for vera ui7 leaving brs in variables
+		startchan, devtype = w:match("([^,]+),([^,]+)")
+			CurrentDevices[startchan] = devtype 
+	end
+	
+
+
+	
+	for c, y in pairs(CurrentDevices) do
+		--if ChildDevices[tonumber(x)] == nil  then
+				--use y to determine what type of dmx device to create   set description to say type
+			if (y == "Single") then  --Create Single Channel DMX Device
+				local DimmableParameters = SID.DIMMING .. ",LoadLevelStatus=0\n" ..
+										   SID.SWITCH .. "Status=0"
+				luup.chdev.append(lul_device,
+									rootdev, 
+									string.format("DMX1-%s", c), 
+									"DMX1 Chan-" .. c , DEVTYPE.SINGLE, 
+									"D_DimmableLight1.xml","" ,DimmableParameters, false)
+									
+									
+				luup.log("ArduinoDMX Creating device Channel:" .. tostring(c) .. " ".. tostring(y))
+			else if (y =="RGB") then 
+					local RGBParameters = SID.DIMMING  .. ",LoadLevelStatus=0\n" ..
+										SID.SWITCH .. "Status=0\n" ..
+										SID.COLOR .. ",CurrentColor=R255,G255,B255" 
+				
+					luup.chdev.append(lul_device,
+										rootdev,
+										string.format("DMX1-RGB-%s", c .. "-" .. c+1 .. "-" .. c+2),
+										"DMX1RGBChan-" ..  c .. "-" .. c+1 .. "-" .. c+2 ,
+										DEVTYPE.RGB , "D_DimmableRGBLight1.xml" ,"" ,RGBParameters, false)
+										
+										
+					luup.log("ArduinoDMX Creating device Channel:" .. tostring(c) .. " ".. tostring(y))
+				end
+			end
+		--end
+	end
+	  -- Initialize Children --
+	luup.log("Call  ArduinoDMX initializeChildren")
+
+	-- Tell Vera we are done creating children --
+	luup.chdev.sync(lul_device, rootdev)
+	
+	--Fill Channels to device variables so don't have to search later
+--TODO Save device ID so don't have to search luup_devices later for every update
+	luup.log("Initialize DMX Channels")
+
+
+     
+   
+	
+	-- luup.call_delay("",10)
+	return true,'ok','ArduinoDMX' 
+	end  
+
+	
+	
+	 function DMXIncoming(lul_device, lul_data)
+	 luup.log("ArduinoDMX received update on Serial:" .. lul_data)
+	 	 
+	 if (string.match(lul_data, "SerialToDmx ready")) then
+	 	 for k, v in pairs(luup.devices) do
+			  if(v.device_num_parent == lul_device) then
+				 if (v.device_type == DEVTYPE.SINGLE) then
+					updateSingle(k) 
+					luup.log("Initialize DMX Channels Set Single")
+				 elseif(v.device_type == DEVTYPE.RGB) then
+					UpdateRGB(k) 
+					luup.log("Initialize DMX Channels Set RGB")
+				 else
+					luup.log("Found Child #" .. tostring(v) .. "for Arduino DMX with unhandled type.")
+				 
+				end
+  			  end
+
+			 end 
+			 
+		 end
+		 
+	end
+			--string match take value from incoming and set variables on devices
+		-- v = ChanToDev[Chan]
+			-- if (v.device_type == DEVTYPE.SINGLE) then
+				 -- local Chan = v.id:match("^DMX1%-(%d+)$") 
+				 -- ChanToDev[Chan]=v
+			-- --TODO Set DMX channel to current values
+			
+			-- elseif(v.device_type == DEVTYPE.SINGLE) then
+				-- local R, G, B = v.id:match("^DMX1%-RGB%-(%d+)-(%d+)-(%d+)$")	
+				-- ChanToDev[R]=v
+				-- ChanToDev[G]=v
+				-- ChanToDev[B]=v
+			-- --TODO Set DMX channel to current device values
+			-- else
+				-- luup.log("Found unexpected Child #" .. tostring(v) .. "for Arduino DMX")
+			-- end
+
+	 
+	  
+</functions>
+
+<startup>ArduinoDMXStartup</startup>
+<incoming>
+	<lua>
+		DMXIncoming(lul_device, tostring(lul_data))
+	</lua>
+</incoming>
+ <actionList>
+
+ <action>
+	<serviceId>urn:micasaverde-com:serviceId:RGB1</serviceId>
+	<name>SetRGBHex</name>
+    <run>
+		local CommandArgs = {}
+		CommandArgs["newColorRGBTarget"] = tonumber(lul_settings.Hex:sub(1,2), 16)..","
+										..tonumber(lul_settings.Hex:sub(3,4), 16)..","
+										.. tonumber(lul_settings.Hex:sub(5,6), 16)
+	
+		luup.call_action(SID.COLOR,"SetColorRGB", CommandArgs, lul_device)
+		
+	</run>
+</action>
+
+<!--Probably safe to delete - Replaced by setcolorRGB
+ <action>
+	<serviceId>urn:micasaverde-com:serviceId:RGB1</serviceId>
+	<name>SetRGBChannels</name>
+    <job>
+		local RedLevel = math.floor(lul_settings.Red+0.5)
+		local GreenLevel = math.floor(lul_settings.Green+0.5)
+		local BlueLevel = math.floor(lul_settings.Blue+0.5)
+		
+		luup.variable_set(SID.RGB, "Red", RedLevel, lul_device)
+		luup.variable_set(SID.RGB, "Green", GreenLevel, lul_device)
+		luup.variable_set(SID.RGB, "Blue", BlueLevel, lul_device)
+		luup.variable_set(SID.COLOR, "CurrentColor", "R" .. RedLevel ..",G".. GreenLevel ..",B".. BlueLevel  , lul_device)
+		UpdateRGB(lul_device,1)
+
+    </job>
+</action> -->
+
+
+<action>
+	<serviceId>urn:micasaverde-com:serviceId:Color1</serviceId>
+	<name>SetColorRGB</name>
+    <job>
+
+		luup.variable_set(SID.COLOR, "CurrentColor", lul_settings.newColorRGBTarget  , lul_device)
+		UpdateRGB(lul_device,1)
+
+    </job>
+</action>
+
+
+<action>
+	<serviceId>urn:micasaverde-com:serviceId:Color1</serviceId>
+	<name>SetColor</name>
+    <job>
+
+		luup.variable_set(SID.COLOR, "CurrentColor", lul_settings.newColorTarget, lul_device)
+		UpdateRGB(lul_device,1)
+
+    </job>
+</action>
+
+
+
+<action>
+	<serviceId>urn:micasaverde-com:serviceId:RGB1</serviceId>
+	<name>SetColor</name>
+    <run>
+	local NewColor = lul_settings.Color
+
+	local RedLevel = 255
+	local GreenLevel = 255
+	local BlueLevel = 255
+	function SetRGB(R,G,B)
+			RedLevel = R
+			GreenLevel = G
+			BlueLevel = B
+	end
+	
+	-- local Colors = {
+	-- Red = SetRGB(255,0,0),
+	-- Orange = SetRGB(255,128,0),
+	-- Yellow = SetRGB(255,255,0)
+	-- }
+		
+	-- if(Colors[NewColor] ~= "") then 
+	-- Colors[NewColor]()
+	-- else luup.log("No Color Matched for Set Color")
+	-- end
+		
+		
+	 if (NewColor == "Red") then
+		 SetRGB(255,0,0)
+	 elseif (NewColor == "Orange") then
+		 SetRGB(255,128,0)
+	 elseif (NewColor == "Yellow") then
+		 SetRGB(255,255,0)
+	 elseif (NewColor == "Green") then
+		 SetRGB(0,255,0)
+	 elseif (NewColor == "Cyan") then
+		 SetRGB(0,255,255)
+	 elseif (NewColor == "Blue") then
+		 SetRGB(0,0,255)
+	 elseif (NewColor == "Purple") then
+		 SetRGB(128,0,128)
+	 elseif (NewColor == "White") then
+		 SetRGB(255,255,255)		
+	--Add Random Color function
+	-- --Add 3 Custom colors to save
+	 end
+		--luup.variable_set(SID.RGB, "Red", RedLevel, lul_device)
+		--luup.variable_set(SID.RGB, "Green", GreenLevel, lul_device)
+		--luup.variable_set(SID.RGB, "Blue", BlueLevel, lul_device)
+		luup.variable_set(SID.COLOR, "CurrentColor", "R"..RedLevel ..",G".. GreenLevel ..",B".. BlueLevel  , lul_device)
+		UpdateRGB(lul_device,1)
+
+    </run>
+</action>
+
+<action>
+	<serviceId>urn:micasaverde-com:serviceId:ArduinoDMX</serviceId>
+	<name>SetChannel</name>
+
+		<run>
+			  -- need to check if greater 0 lessthan 513
+	  local Channel = lul_settings.Channel
+	  luup.log("Arduino Channel Level:" .. lul_settings.ChanLevel)
+	  -- need to check if between 0 and 255
+	  local ChanLevel = math.floor(lul_settings.ChanLevel+0.5) --round it
+	  luup.log("Set Channel: " .. Channel .. "to Level: " .. ChanLevel)
+	  
+	  
+		if (luup.io.write(Channel .. "c" .. ChanLevel .. "w")==false) then
+          luup.log("cannot send: " .. tostring(Channel .. "c" .. ChanLevel .. "w"),1)
+            -- luup.set_failure(true)
+         	--return 2, 10
+		 else
+			luup.log("Sent ArduinoDMX Level")
+			--return 5, 10
+		end
+		
+		</run><incoming>
+			--local lul_jobid = luup.job.setting(lul_job,"irid")
+			--	luup.log("jobid: " .. tostring(lul_jobid))
+			--	local lul_completestr = "completeir," .. lug_module_by_child(lul_device) .. "," .. tostring(lul_jobid)
+			--	if( lul_data==lul_completestr ) then
+	    luup.log("Received from ArduinoDMX: " .. lul_data)
+		return 4, nil, true  -- 4=job_Done, nil=time to wait, true=we processed this incoming packet, don't keep going
+			--	else
+				  -- incoming may return an optional 3rd parameter, which, if false, causing the 
+				  -- incoming packet to be passed on to other jobs and the incoming handler
+			--	  luup.log("got: " .. tostring(lul_data) .. " looking for: " .. lul_completestr)
+			--	  return nil,nil,false
+			--	end
+		</incoming>
+		<timeout> 
+			luup.log("ArduinoDMX timed out sending command")
+			return 2
+		</timeout>
+</action>
+
+<action>
+      <serviceId>urn:upnp-org:serviceId:Dimming1</serviceId>
+      <name>SetLoadLevelTarget</name>
+	  <run>
+	  luup.log("Set DIM Level on Channels")
+
+		local AltID = luup.attr_get('altid', lul_device)
+		local ParentID = tonumber(luup.attr_get('id_parent', lul_device))
+		luup.variable_set(SID.DIMMING, "LoadLevelStatus", lul_settings.newLoadlevelTarget , lul_device)
+		
+		if (lul_settings.newLoadlevelTarget*1 == 0) then
+			luup.variable_set(SID.SWITCH, "Status", 0, lul_device)
+		else 
+			luup.variable_set(SID.SWITCH, "Status", 1, lul_device)
+		end
+		
+		if (AltID:match("^DMX1%-RGB")) then
+			luup.log("Matched RGB Device")
+			UpdateRGB(lul_device,1)
+	
+		----Test Single if it is a single DMX device and set vars
+		elseif ( AltID:match("^DMX1%-(%d+)") ) then
+				luup.log("Matched Single Channel Device")
+				local CommandArgs = {}
+			CommandArgs["ChanLevel"] = tostring(tonumber(lul_settings.newLoadlevelTarget) * 2.55)
+			CommandArgs["Channel"] =  tonumber(AltID:match("^DMX1%-(%d+)$"))
+			WriteDMXChannel(CommandArgs["Channel"], CommandArgs["ChanLevel"],1)	
+		else
+			luup.log("Unable to Determine DMX Device Type for SetLoadLevelTarget")
+		end
+		</run>
+  </action>
+<action>
+      <serviceId>urn:upnp-org:serviceId:SwitchPower1</serviceId>
+      <name>SetTarget</name>
+	  <run>
+	  luup.log("ArduinoDMX Switch power ")
+      			local AltID = luup.attr_get('altid', lul_device)
+				local ChannelNum = tonumber(AltID:match("^DMX1%-(%d+)$")) 		--Match AltId on DMXUniverse-ChannelNumber 
+								
+				--local ParentID = tonumber(luup.attr_get('id_parent', lul_device))
+			 
+				local CommandArgs = {}
+				
+				if (lul_settings.newTargetValue*1 == 1) then
+					 CommandArgs["newLoadlevelTarget"] = 100
+				else
+					 CommandArgs["newLoadlevelTarget"] = 0
+				end
+	
+				
+				local lul_resultcode, lul_resultstring, lul_job, lul_returnarguments = luup.call_action(SID.DIMMING, "SetLoadLevelTarget", CommandArgs, lul_device)
+				
+				--CommandArgs["ChanLevel"] = tostring(tonumber(NewDimLevel) * 2.55)
+				--CommandArgs["Channel"] = tostring(ChannelNum)
+				--luup.log("Set DMX Dimming: " .. CommandArgs["Channel"] .. "to Level: " .. lul_settings.newTargetValue)	
+				--local lul_resultcode, lul_resultstring, lul_job, lul_returnarguments = luup.call_action(SID.ARDUINODMX, "SetChannel", CommandArgs, ParentID)
+				-- luup.variable_set(SID.DIMMING, "LoadLevelStatus", NewDimLevel , lul_device)
+
+				
+				
+				-- if lul_resultcode == -1 then
+					-- luup.log("cannot Set DMX Channels: " .. tostring(lul_send),1)
+					-- luup.set_failure(true)
+					-- return 2    -- 2=job_Error, the job is aborted
+				-- end				
+				
+					-- --if result true
+				
+				return true
+					
+		</run>
+	
+		
+		
+  </action>
+</actionList>
+</implementation>

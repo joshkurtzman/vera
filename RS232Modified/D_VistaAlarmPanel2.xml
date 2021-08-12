@@ -1,0 +1,29 @@
+<?xml version="1.0"?>
+<root xmlns="urn:schemas-upnp-org:device-1-0">
+  <specVersion>
+    <major>1</major>
+    <minor>0</minor>
+  </specVersion>
+  <device>
+    <deviceType>urn:schemas-micasaverde-com:device:AlarmPanel:1</deviceType>
+
+    <staticJson>D_VistaAlarmPanel2.json</staticJson>
+    <friendlyName>Vista Alarm Panel</friendlyName>
+    <manufacturer>Honeywell</manufacturer>
+    <protocol>crlf</protocol>
+    <handleChildren>1</handleChildren>
+    <commUse>rs232</commUse>
+
+    <serviceList>
+      <service>
+        <serviceType>urn:schemas-micasaverde-com:service:VistaAlarmPanel:1</serviceType>
+        <serviceId>urn:micasaverde-com:serviceId:VistaAlarmPanel1</serviceId>
+        <SCPDURL>S_VistaAlarmPanel2.xml</SCPDURL>
+      </service>
+    </serviceList>
+
+    <implementationList>
+      <implementationFile>I_VistaAlarmPanel2.xml</implementationFile>
+    </implementationList>
+  </device>
+</root>

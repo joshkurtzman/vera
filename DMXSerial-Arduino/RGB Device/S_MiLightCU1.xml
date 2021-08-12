@@ -1,0 +1,130 @@
+<?xml version="1.0"?>
+<scpd xmlns="urn:schemas-upnp-org:service-1-0">
+  <specVersion>
+    <major>1</major>
+    <minor>0</minor>
+  </specVersion>
+  <serviceStateTable>
+        
+     <stateVariable sendEvents="no">
+      <name>Options</name>
+      <dataType>string</dataType>
+      <defaultValue>0</defaultValue>
+      <shortCode>options</shortCode>
+    </stateVariable>
+		
+    <stateVariable sendEvents="no">
+      <name>Hue</name>
+      <dataType>string</dataType>
+      <defaultValue>0</defaultValue>
+      <shortCode>hue</shortCode>
+    </stateVariable>
+		
+    <stateVariable sendEvents="no">
+      <name>RGBmode</name>
+      <dataType>string</dataType>
+      <defaultValue>0</defaultValue>
+      <shortCode>rgbmode</shortCode>
+    </stateVariable>
+		
+    <stateVariable sendEvents="no">
+      <name>Whitemode</name>
+      <dataType>string</dataType>
+      <defaultValue>0</defaultValue>
+      <shortCode>whitemode</shortCode>
+    </stateVariable>
+		
+    <stateVariable sendEvents="no">
+      <name>EffectsMode</name>
+      <dataType>string</dataType>
+      <defaultValue>1</defaultValue>
+      <shortCode>effectsmode</shortCode>
+    </stateVariable>
+		
+    <stateVariable sendEvents="no">
+      <name>EffectsRate</name>
+      <dataType>string</dataType>
+      <defaultValue>1</defaultValue>
+      <shortCode>effectsrate</shortCode>
+    </stateVariable>
+		
+    <stateVariable sendEvents="no">
+      <name>IconState</name>
+      <dataType>string</dataType>
+      <defaultValue>0</defaultValue>
+      <shortCode>iconstate</shortCode>
+    </stateVariable>
+		
+  </serviceStateTable>
+  
+  <actionList>
+
+    <action>
+      <name>SetEffectsMode</name>
+      <argumentList>
+        <argument>
+          <name>newEffectsMode</name>
+          <direction>in</direction>
+          <relatedStateVariable>Effects</relatedStateVariable>
+        </argument>
+      </argumentList>
+    </action>
+
+    <action>
+      <name>SetEffectsRate</name>
+      <argumentList>
+        <argument>
+          <name>newEffectsRate</name>
+          <direction>in</direction>
+          <relatedStateVariable>EffectsRate</relatedStateVariable>
+        </argument>
+      </argumentList>
+    </action>
+
+    <action>
+      <name>SetHue</name>
+      <argumentList>
+        <argument>
+          <name>newHue</name>
+          <direction>in</direction>
+          <relatedStateVariable>Hue</relatedStateVariable>
+        </argument>
+      </argumentList>
+    </action>
+
+     <action>
+      <name>SetColor</name>
+      <argumentList>
+        <argument>
+          <name>newColor</name>
+          <direction>in</direction>
+        </argument>
+      </argumentList>
+    </action>
+	
+	<action>
+      <name>Sync</name>
+    </action>
+
+   <action>
+      <name>Enroll</name>
+    </action>
+
+	<action>
+      <name>SetWhiteMode</name>
+    </action>
+
+	<action>
+      <name>SetOptions</name>
+      <argumentList>
+        <argument>
+          <name>newOptions</name>
+          <direction>in</direction>
+          <relatedStateVariable>Options</relatedStateVariable>
+        </argument>
+      </argumentList>
+    </action>
+	
+  </actionList>
+</scpd>
+ 

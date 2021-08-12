@@ -1,0 +1,25 @@
+<?xml version="1.0"?>
+<scpd xmlns="urn:schemas-upnp-org:service-1-0">
+  <specVersion>
+    <major>1</major>
+    <minor>0</minor>
+  </specVersion>
+  
+<serviceStateTable>
+<!--     <stateVariable sendEvents="no">
+      <name>DMXdevices</name>
+      <datatype>string</datatype>
+    </stateVariable>
+
+	<stateVariable sendEvents="no">
+	   <name>DMXUniverse</name>
+	   <datatype>string</datatype>
+	 </stateVariable> -->
+</serviceStateTable>	
+
+  <actionList>
+		<action>
+		  <name>SetTarget</name>
+		</action>
+    </actionList>
+</scpd>

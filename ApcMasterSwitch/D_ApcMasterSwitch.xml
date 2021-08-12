@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="ISO-8859-1"?>
+<root >
+	<specVersion>
+	    <major>1</major>
+		<minor>0</minor>
+	</specVersion>
+	
+<device>
+		<deviceType>urn:schemas-micasaverde-com:device:ApcMasterSwitch</deviceType>
+
+		<friendlyName>APC MasterSwitch</friendlyName>
+		    <handleChildren>1</handleChildren>
+			<protocol>crlf</protocol>
+			<commUse>rs232</commUse>
+<serviceList>
+<service>
+	<serviceType>urn:micasaverde-com:service:ApcMasterSwitch:1</serviceType>
+	<serviceId>urn:micasaverde-com:serviceId:ApcMasterSwitch</serviceId>
+	<SCPDURL>S_ApcMasterSwitch.xml</SCPDURL>
+</service>
+</serviceList>
+</device>
+</root>
+

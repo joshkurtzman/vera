@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="ISO-8859-1"?>
+<implementation>
+<functions>
+
+	local SID = "urn:jkurtzman-com:serviceId:irDevice"
+	local IrPortDevID
+
+	function irDeviceStartup(lul_device)
+      
+		luup.log("Starting device: " .. tostring(lul_device))
+		local devType = luup.variable_get(SID, "Type", luup.device)
+		local devType = luup.variable_get(SID, "Type", luup.device)
+		
+		if (devType == nil) then
+			luup.variable_set(SID, "Type", "Valid Values: [TV, SurroundSound, Light, DVD, CableBox]", lul_device)
+			luup.log(SID .. " Please set Device Type")
+
+		end
+		if (devType == nil) then
+			luup.variable_set(SID, "IrPortDevID", "Set IR Port DevID Here", lul_device)
+			luup.log(SID .. " Please set Device ID")
+		end	
+		
+		
+		
+				
+		
+		return true
+		
+		
+	end
+		  
+		  
+</functions>
+
+ <startup>irDeviceStartup</startup>
+
+ <actionList>
+  <action>
+      <serviceId>urn:upnp-org:serviceId:SwitchPower1</serviceId>
+      <name>SetTarget</name>
+      <run>   
+		if(lul_settings.newTargetValue == "1") then
+			local lul_resultcode, lul_resultstring, lul_job, lul_returnarguments = luup.call_action(SID, "PressButton", { ["ButtonName"] = "On"}, luup.device)
+			luup.variable_set("urn:upnp-org:serviceId:SwitchPower1", "Status", 1, lul_device)
+		else
+			local lul_resultcode, lul_resultstring, lul_job, lul_returnarguments = luup.call_action(SID, "PressButton", { ["ButtonName"] = "Off"}, luup.device)
+            luup.variable_set("urn:upnp-org:serviceId:SwitchPower1", "Status", 0, lul_device)
+		end
+		</run>
+  </action>
+
+  <action>
+	<serviceId>urn:jkurtzman-com:serviceId:irDevice</serviceId>
+	<name>PressButton</name>
+	<run>
+
+		local ip = luup.attr_get(ip, luup.device)
+		local port = luup.variable_get(serviceId, port, luup.device)
+		local module = luup.variable_get(serviceId, module, luup.device)
+		local frequency = luup.variable_get(serviceId, frequency, luup.device)
+
+		local count = "1"
+		local offset = "1"
+		local requestID = "100"
+		
+		local socket = require("socket")
+		tcp = assert(socket.connect(ip, port))
+		local TCPRequest = "sendir," .. module .. "," .. requestID .. "," .. frequency "," ..  count .. "," .. offset .. "," .. irCode .. "\r\n"
+		tcp:send(TCPRequest)
+		luup.log("Sent gcir request to " .. ip ..":" .. port .. " - " .. TCPRequest)
+		luup.sleep(1050)
+		tcp:close()
+	</run>
+  </action> 
+
+</actionList>
+</implementation>

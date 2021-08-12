@@ -1,0 +1,1075 @@
+<?xml version="1.0"?>
+<implementation>
+  <functions>
+  
+  ---- Panel Data Structures ----
+  
+  local VISTA_PANEL_SID = "urn:micasaverde-com:serviceId:VistaAlarmPanel1"
+  local ALARM_PARTITION_SID = "urn:micasaverde-com:serviceId:AlarmPartition2"
+  local SECURITY_SID = "urn:micasaverde-com:serviceId:SecuritySensor1"
+  local OUTPUT_SID = "urn:micasaverde-com:serviceId:HaDevice1"
+  local DEBUG_MODE = true
+
+  
+   
+  
+  local ALARM_DEVICE
+  local EventLog = "Event Log:\n"
+  
+  local STATUS_ZONE_PARTITION
+
+  local Partitions = { }
+  local Zones = { }
+  local ZoneDescriptions = { }
+  local Outputs = { }
+  local OutputDescriptions = { }
+  local ZoneData
+  local ChildDevices={
+    partitions={},
+    zones={},
+	outputs={},
+   }
+
+  ---- General Utilities ----
+
+  local function log(text)
+    --EventLog = EventLog .. text .. " : "
+    luup.log("VistaAlarmPanel: " .. text)
+  end
+
+  local function debug(text)
+    if(DEBUG_MODE == true) then
+      log("debug " .. text)
+    end
+  end 
+  
+  -- local function getVistaPanelZoneDescriptions()
+  -- --luup.variable_get(VISTA_PANEL_SID, Zones , ALARM_DEVICE)
+  -- --LOAD zone descriptions
+  
+  
+	-- local Zoneinfo = "1,Test Zone; 2,Test2; 4,Test4"
+
+	-- for w in (Zoneinfo .. ";"):gmatch("([^;]*);") do 
+			-- zonenum, description = w:match("([^,]+),([^,]+)")
+			-- ZoneDescriptions[zonenum] = description 
+			-- luup.log("loaddesc"..zonenum .. " desc:" .. description)	
+	-- end
+
+	-- for n, w in ipairs(ZoneDescriptions) do
+		-- luup.log(n .. ": " .. w)
+	-- end
+	 
+	 
+  -- end
+  
+  local function setVistaPanelState(variable, data)
+    luup.variable_set(VISTA_PANEL_SID, variable, data, ALARM_DEVICE)
+  end
+
+  local function setPartitionState(partition, variable, data)
+		local partitionDevice = ChildDevices.partitions[partition]
+
+     if(partitionDevice ~= nil) then
+       luup.variable_set(ALARM_PARTITION_SID, variable, data, partitionDevice)
+	  -- log(string.format("setPartitionState: Setting partition " .. partition .. ", variable:" .. variable .. data))
+     else
+       log(string.format("setPartitionState: Setting non-existant partition %s, variable %s, data %s",
+                         partition, variable, (data or "N/A")))
+     end
+  end
+   
+  ---- Parsing Functions ----
+
+function Dec2Hex(nValue)
+	if type(nValue) == "string" then
+		nValue = String.ToNumber(nValue);
+	end
+	nHexVal = string.format("%X", nValue);  -- %X returns uppercase hex, %x gives lowercase letters
+	sHexVal = nHexVal.."";
+	return sHexVal;
+end
+
+
+  local function checksum(s)
+    local tot = 0
+    for i=1,(string.len(s)-2) do
+      tot = tot+string.byte(s,i)
+    end
+    return (((tot % 256)*-1)%256)
+  end
+
+  local function parseMessage(msgIn) 
+ 
+	
+
+ --vista dumps Ps without newlines sometimes
+	if(string.match(msgIn, "^(P.*)")) then
+		log("Removed P from message")
+		msgIn = string.sub(msgIn, 2)
+	end
+	
+    local msgSize,msgType,msgData,msgCsum = string.match(msgIn, "^(%x%x)(..)(.*)(%x%x)$")
+
+  
+    if(msgSize == nil or
+       msgType == nil or
+       msgData == nil or
+       msgCsum == nil) then
+      log("Received badly formed message" .. msgIn )
+      return "Bad" , "Message"    
+	 end
+  log("Size:" .. msgSize .. " Type:" .. msgType .. " Data:" .. msgData .. " Sum:" .. msgCsum)
+    -- Check Size --
+    
+    msgSize = tonumber(msgSize,16)
+    log("messageSize: " .. msgSize)
+    if(string.len(msgIn) ~= msgSize) then
+      log("Message length does not match length field.")
+      return false
+    end
+  
+    -- Check Checksum -- 
+    
+    msgCsum = tonumber(msgCsum, 16)
+    
+    if(checksum(msgIn) ~= msgCsum) then
+      log("Message checksum does not match checksum field.")
+      return false
+    end
+    
+    -- Return Fields --
+
+    msgType = msgType:lower()
+    
+    return msgType, msgData 
+   
+  end
+    
+  ---- IO Functions ----
+  
+  function sendRequest(s, rCmd, rData)
+
+    if(rCmd == nil) then
+      rCmd = "ok"
+    end
+
+    if(rData == nil) then 
+      rData = "00"
+    end
+
+    luup.io.intercept()
+
+    if(luup.io.write(s)==false) then
+      log(string.format("Cannot write request: %s",s))
+      return false
+    end
+
+    local i = 1
+    local a = { }
+
+    while true do
+    --  luup.io.intercept()
+      incoming_data = luup.io.read()
+
+      if(incoming_data == nil) then
+        log("Data not returned")
+        return a
+      else
+        local msgType, msgData = parseMessage(incoming_data)
+        log(string.format("msgType: %s  rCmd: %s  msgData: %s rData: %s", msgType, rCmd, msgData, rData))
+        if(msgType == rCmd and msgData == rData) then
+          return a
+        end
+        
+      end
+
+      a[i] = incoming_data
+      i = i + 1
+
+      -- log(string.format("Data - %s", incoming_data))
+    end
+     
+    return a
+
+  end
+
+  local function presetParameters(t)
+    local o = {}
+    for _,parm in ipairs(t) do
+      table.insert(o, ("%s,%s=%s"):format(unpack(parm)))
+    end
+    return table.concat(o, "\n")
+  end
+    
+
+local function createChildOutputs(maindev, rootptr) --  csv, id, description, deviceType, deviceFilename, parameters)
+-- local securitySensorParameters = OUTPUT_SID .. ",Status=0\n"
+	 for i,z in ipairs(Outputs) do
+		if (ChildDevices.outputs[tonumber(z)] == nil)  then
+				luup.chdev.append(maindev, rootptr, string.format("Output-%s", z), OutputDescriptions[z] , "urn:schemas-micasaverde-com:device:Relay:1", "D_Relay1.xml"
+									,nil , "", false)
+		--else --figure out how to update name on existing devices here - set status too
+		--	luup.attr_set("name", OutputDescriptions[z] , ChildDevices.outputs[tonumber(z)])
+		end
+    end
+  end
+	
+ local function createChildPartitions(maindev, rootptr) --  csv, id, description, deviceType, deviceFilename, parameters)
+    for i,line in ipairs(Partitions) do
+			if (ChildDevices.partitions[i] == nil)  then
+				luup.chdev.append(maindev, rootptr, string.format("Partition-%s", Partitions[i]),  string.format("Partition %s", Partitions[i]), 
+                     "urn:schemas-micasaverde-com:device:AlarmPartition:2" , "D_VistaAlarmPartition2.xml", nil, 
+					    ALARM_PARTITION_SID .. ",Zones= null\n"	.. ALARM_PARTITION_SID .. ",ArmMode, Disarmed\n" .. ALARM_PARTITION_SID .. ",DetailedArmMode, Disarmed", false)
+			end
+	end
+  end
+
+  local function createChildZones(maindev, rootptr) --  csv, id, description, deviceType, deviceFilename, parameters)
+    local securitySensorParameters = SECURITY_SID..",Armed=1\n"..SECURITY_SID..",Tripped=0\n"..SECURITY_SID..",LastTrip=0"
+	
+    for i,z in ipairs(Zones) do
+		if (ChildDevices.zones[tonumber(z)] == nil)  then
+					-----Update with Device SIDS when upgraded to version 7 so they don't all show motions
+				  if(ZoneDescriptions[z]:match("Motion") == "Motion") then
+				 		luup.chdev.append(maindev, rootptr, string.format("Zone-%s", z),  ZoneDescriptions[z], "urn:schemas-micasaverde-com:device:MotionSensor:1", "D_MotionSensor1.xml"
+									,nil, securitySensorParameters, false)
+									
+				  elseif(ZoneDescriptions[z]:match("Window") == "Window") then 
+						luup.chdev.append(maindev, rootptr, string.format("Zone-%s", z),  ZoneDescriptions[z], "urn:schemas-micasaverde-com:device:DoorSensor:1", "D_DoorSensor1.xml"
+									  ,nil, securitySensorParameters, false)
+									  
+				  elseif(ZoneDescriptions[z]:match("Door") == "Door") then 
+					luup.chdev.append(maindev, rootptr, string.format("Zone-%s", z),  ZoneDescriptions[z], "urn:schemas-micasaverde-com:device:DoorSensor:1", "D_DoorSensor1.xml"
+									  ,nil, securitySensorParameters, false)
+					  
+				  else
+					luup.chdev.append(maindev, rootptr, string.format("Zone-%s", z),  ZoneDescriptions[z] .."-" .. z, "urn:schemas-micasaverde-com:device:GenericSensor:1", "D_GenericSensor1.xml"
+									  ,nil, securitySensorParameters, false)				  
+				  end
+		end
+    end
+  end
+
+  local function presetVariable(sid, varname, dev, default)
+    local v = luup.variable_get(sid, varname, dev)
+    if(v == nil) then
+      luup.variable_set(sid, varname, default or "", dev)
+    end
+    return v
+  end
+
+  local function extractPartition(id)
+    local partition = id:match("^Partition%-(%d+)$")
+    log("extractPartition: Partition " .. (partition or "N/A"))
+    return partition
+  end
+
+  local function extractZone(id)
+    local zone = id:match("^Zone%-(%d+)$")
+    log("extractZone: Zone " .. (zone or "N/A"))
+    return zone
+  end
+  
+  local function extractOutput(id)
+    local output = id:match("^Output%-(%d+)$")
+    log("extractOutput: Output-" .. (output or "N/A"))
+    return output
+  end
+  
+  local function initializeChildren(device)
+    for k, v in pairs(luup.devices) do
+      if(v.device_num_parent == device) then
+        log(string.format("Scanning luup.devices[%s(%s)]", tostring(k), type(k)))
+          local zone = extractZone(v.id)
+		  if(zone ~= nil) then
+			  ChildDevices.zones[tonumber(zone)] = k
+			else
+				local partition = extractPartition(v.id)
+					if(partition ~= nil) then
+					ChildDevices.partitions[tonumber(partition)] = k
+			else
+				local o = extractOutput(v.id)
+					if(o ~= nil) then
+					ChildDevices.outputs[tonumber(o)] = k
+				else
+					log("Found unexpected Child #" .. v.id)
+          end
+        end
+      end
+    end
+	end
+
+    return true, "Ok", "VistaAlarmPanel"
+  end
+
+
+  ---- Panel Status Reads ----
+ function loadOutputData()
+    -- Read Zone Descriptor --
+
+    -- a = sendRequest("08cs0062")
+
+	-- local Outputinfo = "1,West Garage Door Opener;2,East Garage Door Opener;3,Rear Garage Door Opener"
+    -- local numOutputs = 0
+    -- local foundOutputs = { }
+	-- local f = 0
+
+    -- for i,line in ipairs(a) do
+      -- msgType, msgData = parseMessage(line)
+      -- if(msgType == "cs") then
+        -- local messageNum, fields = string.match(msgData, "^(%d)(.*)$")
+       
+
+	   -- for outputStatus in string.gmatch(fields, "%d") do
+			-- f = f + 1
+			-- if(outputStatus == "0" or outputStatus == "1") then
+				-- numOutputs = numOutputs + 1
+				-- table.insert(Outputs, f)
+			-- end
+        -- end 
+      -- end
+    -- end
+	OutputData = luup.variable_get(VISTA_PANEL_SID, "OutputInfo" , ALARM_DEVICE)
+		log("Loaded OutputData Variable" .. OutputData)
+	  if(OutputData == nil) then
+				setVistaPanelState("OutputInfo", "1,Undefined Zones")
+				OutputData = "1,Undefined Zones"
+		end
+		
+		-- local Outputinfo = "1,West Garage Door Opener;2,East Garage Door Opener;3,Rear Garage Door Opener" 
+	local count = 0
+	for w in (OutputData .. ";"):gmatch("([^;]*);") do 
+		count = count + 1		
+		num, description = w:match("([^,]+),([^,]+)")
+		num = tonumber(num)
+		OutputDescriptions[num] = description 
+		table.insert(Outputs, num)
+		luup.log("LoadOutput: ".. num .. " desc:" .. description)
+      end
+  setVistaPanelState("ActiveOutputs", numOutputs)
+  end
+  
+  function loadPartitionData()
+    -- Read Zone Descriptor --
+    a = sendRequest("08zp004E")
+
+    local numPartitions = 0
+    local numZones = 0
+    local foundParts = { }
+
+    for i,line in ipairs(a) do
+      msgType, msgData = parseMessage(line)
+      if(msgType == "zp") then
+        local messageNum, fields = string.match(msgData, "^(%d)(.*)$")
+        for partStatus in string.gmatch(fields, "%d") do
+          partStatus = tonumber(partStatus)
+          if(partStatus ~= 0 and foundParts[partStatus] == nil) then
+            numPartitions = numPartitions + 1
+			      foundParts[partStatus] = 1
+            Partitions[numPartitions] = partStatus
+          end
+        end 
+      end
+    end
+       
+    setVistaPanelState("ActivePartitions", numPartitions)
+
+  end
+  
+  local function tchelper(first, rest)
+    return first:upper()..rest:lower()
+  end
+   
+  local function loadZoneData()
+
+  -- local a = sendRequest("08zp004E")
+   -- local j = 0
+   -- local k = 0
+
+      -- if(a ~= nil) then 
+      -- for i,line in ipairs(a) do
+        -- msgType, msgData = parseMessage(line)
+        -- if(msgType == "zp")		then
+        
+		--	 for l = 1, string.len(msgData) do
+			-- for l = 1, 30 do	---limit zones to 30
+				-- c = string.sub(msgData, l, l)
+				-- local char = tonumber(c)
+				-- j = j + 1
+						-- if(char == 1) then
+								-- zoneNum = tonumber(j)
+								-- Zones[j] = zoneNum
+								-- zoneDesc = "Zone " .. j -- need to set up pull from manual table
+								-- ZoneDescriptions[zoneNum] = zoneDesc 
+								-- k = k + 1
+							-- end	
+					-- end
+		 -- end
+	  -- end
+    -- end
+
+    ZoneData = luup.variable_get(VISTA_PANEL_SID, "ZoneInfo" , ALARM_DEVICE)
+	    if(ZoneData == nil) then
+				setVistaPanelState("ZoneInfo", "1,Undefined Zones")
+				ZoneData = "1,Undefined Zones"
+		end
+		--local ZoneData = "3,Garage Motion;4,Office Motion;5,Test;17,Front Door;18,Garage Side Door;19,Mud Room Door;20,Back Patio Door;21,Garage Stairs;22,Laundry Room Door;23,Basement Door;24,Office Door;25,West Garage Door;26,East Garage Door;27,Rear Garage Door"
+		
+	local count = 0
+	log("Load Zones")
+	
+	for w in (ZoneData .. ";"):gmatch("([^;]*);") do 
+		count = count + 1		
+		zonenum, description = w:match("([^,]+),([^,]+)")
+			ZoneDescriptions[zonenum] = description 
+			table.insert(Zones, zonenum)
+			luup.log("loaddesc "..zonenum .. " desc:" .. description)	
+	end
+	
+	  log(count)
+	setVistaPanelState("ActiveZones", count)
+	
+   
+  end
+
+  local function loadAlarmState()
+    local a = sendRequest("08as0064")
+    if(a ~= nil) then
+      for i,line in ipairs(a) do
+       msgType, msgData = parseMessage(line)
+        if(msgType == "as") then
+            	local c = msgData:gmatch"^."
+					if(c == "A") then
+					  luup.variable_set(ALARM_PARTITION_SID, "ArmMode", "Armed", 48)
+					  luup.variable_set(ALARM_PARTITION_SID, "DetailedArmMode", "Armed", 48)
+					elseif(c == "H") then
+					  luup.variable_set(ALARM_PARTITION_SID, "ArmMode", "Stay", 48)
+					  luup.variable_set(ALARM_PARTITION_SID, "DetailedArmMode", "Stay", 48)
+					elseif(c == "D") then
+					  luup.variable_set(ALARM_PARTITION_SID, "ArmMode", "Disarmed", 48)
+					  luup.variable_set(ALARM_PARTITION_SID, "DetailedArmMode", "Disarmed", 48)
+					else
+					  luup.variable_set(ALARM_PARTITION_SID, "ArmMode", "Disarmed", 48)
+					  luup.variable_set(ALARM_PARTITION_SID, "DetailedArmMode", "Disarmed", 48)
+					end
+         else 
+		 luup.log("Could not load alarm state")
+		 end
+		 
+		 
+       end
+	   
+    end
+  end
+
+
+
+  local function updateZoneStatus()
+	luup.log("VistalAlarmPanel: UpdateZoneStatus")
+    luup.io.write("08zs004B")
+  end
+
+
+
+
+    local function updateZoneInfo(s,z)
+   		
+		local zonedev = ChildDevices.zones[z]
+	
+		--Set devices back to not failed, TODO handle this better
+		if luup.variable_get("urn:micasaverde-com:serviceId:HaDevice1", "CommFailure", zonedev) == "1" then
+			luup.set_failure(0,zonedev)
+			luup.log("Zone ".. z .. " no longer in failed state")
+		end
+		
+		if ( s == "0" or  s == "2" or  s == "4" or s == "8") then
+				if (luup.variable_get(SECURITY_SID, "Tripped", zonedev) ~= "0") then
+				luup.variable_set(SECURITY_SID, "Tripped", 0, zonedev)
+				end
+				
+				
+		elseif ( s == "1" or  s == "3" or s == "5" or s == "9" ) then
+	
+				--Update last trip only if it wasn't already faulted.
+				if (luup.variable_get(SECURITY_SID, "Tripped", zonedev) == "0") then
+					luup.variable_set(SECURITY_SID, "LastTrip", tostring(os.time()), zonedev)
+				end
+				
+				if (luup.variable_get(SECURITY_SID, "Tripped", zonedev) ~= "1") then
+					luup.variable_set(SECURITY_SID, "Tripped", 1, zonedev)
+				end
+		else
+			luup.set_failure(1,zonedev)  --Test out set failure sometime for devices in trouble state
+			luup.task("Unhandled Zone Status  of " .. s .. "For Zone:" .. z, 2, "Alarm - Zone: " .. z, -1)
+			luup.log("Unhandled Zone Status  of " .. s .. "For Zone:" .. z)
+		end
+	 end
+	 
+  local function processZoneStatus(msgData)
+
+	--Each character is the sum of all applicable status values, expressed in hexadecimal using ASCII characters 0-9 and A-F
+				-- 0 Closed  -- 1 Open  -- 2 Trouble  -- 4 Alarm  -- 8 Bypassed
+	   log("processZone Start DATA:" .. msgData)
+	   local z = 0
+		for c in msgData:gmatch"." do
+			z = z + 1
+			if(ChildDevices.zones[z] ~= nil) then
+					updateZoneInfo(c,z)
+			end
+		end
+  end
+	  
+  
+  local function updatePanelLCD()
+    for i,line in ipairs(Partitions) do
+      line = tonumber(line)     
+      local messageToSend = string.format("09KD%d0000", line)
+      local myCheck = checksum(messageToSend)
+      messageToSend = string.format("09KD%d00%02X", line, myCheck)
+
+      luup.io.intercept()
+      if(luup.io.write(messageToSend)==false) then
+        log(string.format("Cannot write request: %s", messageToSend))
+        return false
+      end
+
+      while true do
+        luup.io.intercept()
+        local incoming_data = luup.io.read()
+
+        if(incoming_data == nil) then
+          log("Data not returned")
+          return
+        else
+          local msgType, msgData = parseMessage(incoming_data)
+          if(msgType == "kd") then
+            local led, lcd = msgData:match("^(.)(.*)$")
+         --   setPartitionState(line, "VendorStatus", lcd)
+            log(string.format("Received LCD: %s", lcd))
+            break
+          else
+            processIncoming(incoming_data)
+          end
+        end   
+      end
+      
+    end
+
+  end
+
+
+
+  ---- System Event Handlers ----
+local SystemEvents = {
+        ["06"] = {"Alarm", "Fire Alarm",
+                  function (cmd, part, zone, user)
+                    setPartitionState(part, "Alarm", "Active")
+                  end},
+       ["07"] = {"Alarm", "Panic Alarm",
+                  function (cmd, part, zone, user)
+                    setPartitionState(part, "Alarm", "Active")
+                  end},
+       ["08"] = {"Alarm", "Silent Panic Alarm",
+                  function (cmd, part, zone, user)
+                    setPartitionState(part, "Alarm", "Active")
+                  end},
+       ["09"] = {"Alarm", "24 Hr Auxiliary",
+                  function (cmd, part, zone, user)
+                    setPartitionState(part, "Alarm", "Active")
+                  end},				  
+
+       ["0C"] = {"Alarm", "Duress Alarm",
+                  function (cmd, part, zone, user)
+                    setPartitionState(part, "Alarm", "Active")
+                  end},	
+	    ["23"] = {"Alarm", "Day/Night Alarm",
+                  function (cmd, part, zone, user)
+                    setPartitionState(part, "Alarm", "Active")
+                  end},
+	    ["24"] = {"Alarm", "Day/Night Alarm Restore",
+                  function (cmd, part, zone, user)
+                    setPartitionState(part, "Alarm", "None")
+                  end},				  
+
+				  
+        ["11"] = {"Trouble", "Trouble",
+                  function (cmd, part, zone, user)
+                    log("Empty Command")
+                  end},
+        ["12"] = {"Trouble", "Trouble Restore",
+                  function (cmd, part, zone, user)
+                     log("Empty Command")
+                  end},
+				  
+        ["21"] = {"Bypass", "Other Bypass",
+                  function (cmd, part, zone, user)
+                     log("Empty Command")
+                  end},
+				  
+        ["22"] = {"Bypass", "Other Unbypass",
+                  function (cmd, part, zone, user)
+                     log("Empty Command")
+                  end},
+        ["18"] = {"Open/Close", "Arm",
+                  function (cmd, part, zone, user)
+                    setPartitionState(part, "ArmMode", "Armed")
+                    setPartitionState(part, "DetailedArmMode", "Armed")
+                  end},
+				  
+        ["16"] = {"Open/Close", "Disarm",
+                  function (cmd, part, zone, user)
+                    setPartitionState(part, "ArmMode", "Disarmed")
+                    setPartitionState(part, "DetailedArmMode", "Disarmed")
+                    updateZoneStatus()
+                  end},
+
+		["20"] = {"Alarm", "Alarm Cancel",
+                  function (cmd, part, zone, user)
+                    setPartitionState(part, "Alarm", "None")
+                  end},
+        ["0E"] = {"Alarm", "Other Alarm Restore",
+                  function (cmd, part, zone, user)
+                    setPartitionState(part, "Alarm", "None")
+                  end},
+				  
+        ["11"] = {"Trouble", "Other Trouble",
+                  function (cmd, part, zone, user)
+                  end},
+				  
+        ["12"] = {"Trouble", "Other Trouble Restore",
+                  function (cmd, part, zone, user)
+                  end},
+
+        ["0F"] = {"Trouble", "RF Low Battery",
+                  function (cmd, part, zone, user)
+                  end},
+		["10"] = {"Trouble", "RF Low Battery Restore",
+                  function (cmd, part, zone, user)
+                  end},
+				  
+	    ["1C"] = {"Trouble", "AC Fail",
+                  function (cmd, part, zone, user)
+                  end},
+		["1D"] = {"Trouble", "AC Restore",
+                  function (cmd, part, zone, user)
+                  end},
+				  
+	    ["1A"] = {"Trouble", "Low Battery",
+                  function (cmd, part, zone, user)
+                  end},
+		["1B"] = {"Trouble", "Low Battery",
+                  function (cmd, part, zone, user)
+                  end},
+				  
+        ["00"] = {"Alarm", "Perimeter",
+                  function (cmd, part, zone, user)
+                  setPartitionState(part, "Alarm", "Active");
+                  end},
+
+        ["04"] = {"Alarm", "Interior",
+                  function (cmd, part, zone, user)
+                    setPartitionState(part, "Alarm", "Active");
+                  end},
+			  
+        ["01"] = {"Alarm", "Entry/Exit Alarm",
+                  function (cmd, part, zone, user)
+                    setPartitionState(part, "Alarm", "Active");
+                  end},
+
+        ["15"] = {"Open/Close", "Arm Stay",
+                  function (cmd, part, zone, user)
+                    setPartitionState(part, "ArmMode", "Armed")
+                    setPartitionState(part, "DetailedArmMode", "Stay")
+                    updateZoneStatus()
+                   end},
+ 
+        ["28"] = {"Open/Close", "Fail To Arm",
+                  function (cmd, part, zone, user)
+                    setPartitionState(part, "ArmMode", "FailedToArm")
+                    setPartitionState(part, "DetailedArmMode", "Armed")
+                    updateZoneStatus()
+                  end},
+        ["27"] = {"Open/Close", "Fail To Disarm",
+                  function (cmd, part, zone, user)
+                    setPartitionState(part, "ArmMode", "Armed")
+                    setPartitionState(part, "DetailedArmMode", "Armed")
+                    updateZoneStatus()
+                  end},
+                    
+        ["2b"] = {"All", "Faults",
+                  function (cmd, part, zone)
+					updateZoneInfo( "1", zone )
+				  end},
+				  
+        ["2c"] = {"All", "Fault Restore",
+                  function (cmd, part, zone)
+                  	updateZoneInfo( "0", zone )
+                  end},  
+ 
+        }
+  
+ 
+  
+  local function processSystemEvent(data)
+	
+	-- log( data.. " Process system event start")
+     data = data:lower()
+	-- log( data.. " Process system event start")
+     
+	 local eventCode, zoneNumber, minute, hour, day, month, junk = string.match(data,"^(%x%x)(%x%x)(%d%d)(%d%d)(%d%d)(%d%d)(.*)$")
+	 zoneNumber = tonumber(zoneNumber,16) + 1
+		--log( "Zone Number converted: "..zoneNumber )
+	 local part = tonumber(1) --Force to use partition one until code up  way to identify based on partition report
+     local userNumber = tonumber(1)  --no user number reported on standard rs232 code it to one
+	 	-- log( "Error: System event. Raw Code ".. data .. eventCode .. zoneNumber )
+
+     local stuff = SystemEvents[eventCode]
+	 
+     if(stuff == nil) then
+       log("Error: Unhandled event. Raw Code ".. data .. eventCode .. zoneNumber )
+       return
+     end
+	
+	--log("DEBUG: ProccessSystemEvent: Raw Code ..data..EventCode:eventCode..Zone:..zoneNumber")
+    
+	local eventType, eventDescription, eventFunction = stuff[1], stuff[2], stuff[3] 
+
+     setPartitionState(1, "VendorStatus", eventDescription)
+	 setPartitionState(1, "VendorStatusCode", eventCode)
+	 setPartitionState(1, "VendorStatusData", eventType)
+     setPartitionState(1, "LastUser", userNumber)
+ 
+     eventFunction(eventCode, part, tonumber(zoneNumber), userNumber)
+	 
+   --  updatePanelLCD()
+   
+    -- log(string.format("System Event Received Partition %d", part))
+    -- log(string.format("Event Code: 0x%s - %s - %s", eventCode, eventType, eventDescription))
+    -- log(string.format("Zone: %d", zoneNumber))
+    -- log(string.format("User: %d", userNumber))
+    --  log(string.format("Time Stamp %s/%s/%s %s:%s", month, day, year, hour, minute))     
+
+  end
+
+  ---- Startup Code ----
+
+    function alarmStartup(lul_device)
+		log("Starting Plugin")
+      ALARM_DEVICE = lul_device
+  
+      ---- Initialize RS232 Port (through any adapter) ----
+  
+        local ipAddress, trash, ipPort = string.match(luup.devices[lul_device].ip, "^(.*)(:(%d+))$")
+
+        if ((ipAddress ~= nil) and (ipAddress ~= "")) then
+            if (ipPort == nil) then
+                ipPort = 5000
+            end
+            log(string.format("Running Network Attached I_VistaAlarmPanel1.xml on %s:%s Device# %s, id %s",
+                ipAddress, ipPort, tostring(lul_device), luup.devices[lul_device].id))
+            luup.io.open(lul_device, ipAddress, ipPort)
+        else
+            log("Running Serial Attached I_VistaAlarmPanel1.xml #" .. tostring(lul_device)
+                .. " starting with id " .. luup.devices[lul_device].id)
+        end
+
+        luup.log("starting device: " .. tostring(lul_device))
+        
+        -- Tell Vera that we are going start creating children --
+        
+        local rootdev = luup.chdev.start(lul_device)        
+
+        ---- Populate Data Structures -----
+   
+		
+		
+   
+		log("Call Load Partition data")
+        loadPartitionData()
+        
+		
+		log("Call Load Zone data")
+	    loadZoneData() -- no descriptions available on 128bp - load from variable instead
+		
+		log("Load Output data")
+		loadOutputData()
+		
+		log("Call loadAlarmState")
+        loadAlarmState()
+        
+        -- Create Children --
+        
+        createChildPartitions(lul_device, rootdev)
+		
+        createChildZones(lul_device, rootdev)
+
+		createChildOutputs(lul_device, rootdev)
+		
+        -- Initialize Children --
+		log("Call initializeChildren")
+        status, message, area = initializeChildren(lul_device)    
+        
+        -- Tell Vera we are done creating children --
+        log("Call CHDev Sync")
+        luup.chdev.sync(lul_device, rootdev)
+
+		
+        --updateZoneStatus()
+		
+		--wait until things are started to get zone status to speed up startup
+		luup.call_delay("UpdateZoneStatusTimer", 30, "")
+
+		 
+		---TODO Need to update output status
+		--log("call update output status")
+        --updateOutputStatus()
+		
+  --      updatePanelLCD()
+  
+  log("Finished Starting Plugin")
+    end
+
+	
+	
+	
+  ---- RS232 Input Handler ----
+  
+  function processIncoming(s)
+	if( #s > 7) then
+		local code, data = parseMessage(s)
+	   -- log("Input Handler: ".. data .. "Code ".. code)
+		if(code == "nq") then
+			  processSystemEvent(data)
+		
+		elseif(code == "ok") then
+		--OKs arn't needed
+				
+		elseif(code == "zs") then
+		  processZoneStatus(data)
+		end
+	else
+	log("Received Short message dropped it.")
+	end
+  end
+  
+	function UpdateZoneStatusTimer(lul_data)	
+    	updateZoneStatus()
+		log("Running Zone Status Timer")
+		--Schedule it to run every 1/2 hours to keep in sync
+		luup.call_delay("UpdateZoneStatusTimer", 1800, "")
+
+		
+		--local resultCode, resultString, job, returnArguments =  luup.call_action("urn:micasaverde-com:serviceId:VistaAlarmPanel1", "UpdateDeviceStatus", {} , lul_data)
+		--log("Action Failed String:" .. resultString .. "-" .. "DEV:" .. lul_data .. " jobid:" .. job)
+	end
+  ---- End of Code Block ----
+
+  </functions>
+  <startup>alarmStartup</startup>
+
+  <incoming>
+    <lua>
+        processIncoming(tostring(lul_data))
+      --  setVistaPanelState("EventLog", EventLog)
+    </lua>
+
+  </incoming>
+  <actionList>
+
+    <action>
+      <serviceId>urn:micasaverde-com:serviceId:VistaAlarmPanel1</serviceId>
+      <name>SendCommand</name>
+      <run>
+        log("Action::SendCommand: " .. (lul_settings.Command or "none") .. " Data:" .. (lul_settings.Data or "none"))     
+		
+      </run>
+
+    </action>
+	
+	
+    <action>
+        <serviceId>urn:micasaverde-com:serviceId:VistaAlarmPanel1</serviceId>
+        <name>UpdateDeviceStatus</name>
+	    <job>
+			log("Action::UpdateZoneStatusJob: " .. (lul_settings.Command or "none") .. " Data:" .. (lul_settings.Data or "none"))    
+			updateZoneStatus()
+				-- 5 = job_WaitingForCallback
+				-- and we'll wait 5 seconds for incoming data
+			return 4, nil
+		</job>
+
+     </action>
+	
+	
+
+    <action>
+      <serviceId>urn:micasaverde-com:serviceId:AlarmPartition2</serviceId>
+      <name>RequestArmMode</name>
+      <run>
+        local armMessage;
+
+         if(lul_settings.State == "Armed") then
+           armMessage = "aa"
+         elseif(lul_settings.State == "Stay") then
+           armMessage = "ah"
+         elseif(lul_settings.State == "Disarmed") then
+           armMessage = "ad"
+         else
+           log("Bad Message Received")
+           return false
+         end
+
+        local messageToSend = string.format("0E%s02%04d00", armMessage, lul_settings.PINCode)
+      
+   local myCheck = checksum(messageToSend .. "00" ) --put extra two because checksum() strips off the checksum
+        local hexchecksum = Dec2Hex(myCheck) 
+		if (#hexchecksum ~= 2) then
+			if (#hexchecksum == 1)then
+				hexchecksum = string.format("%02d",hexchecksum)
+			else
+				log("Invalid checksum calculated in output command")
+			end
+		end
+		log( "Message to Send: "  .. messageToSend)
+		
+		
+	log( "HexChecksum to Send: "  .. hexchecksum)	
+        messageToSend = messageToSend .. hexchecksum
+
+        if(luup.io.write(messageToSend)==false) then
+          log(string.format("Cannot write request: %s", messageToSend))
+          return false
+        end
+        
+
+        -- log("Action::RequestArmMode " .. messageToSend)
+      </run>
+    </action>
+    
+    <action>
+      <serviceId>urn:micasaverde-com:serviceId:AlarmPartition2</serviceId>
+      <name>RequestQuickArmMode</name>
+      <run>
+        local keyPadMessage
+
+        if(lul_settings.State == "Disarmed") then
+          return
+        elseif(lul_settings.State == "Armed") then
+          keyPadMessage = "B2"
+        elseif(lul_settings.State == "Stay") then 
+          keyPadMessage = "B3"
+        elseif(lul_settings.State == "StayInstant") then 
+          keyPadMessage = "B3"
+        elseif(lul_settings.State == "Night") then 
+          keyPadMessage = "B3"
+        elseif(lul_settings.State == "NightInstant") then 
+          keyPadMessage = "B3"
+        elseif(lul_settings.State == "Force") then 
+          keyPadMessage = "B2"
+        elseif(lul_settings.State == "Vacation") then 
+          keyPadMessage = "B2"
+        else
+          log("Bad Panic Message Received")
+          return
+        end
+
+        local messageToSend = string.format("0BKS1%s0000", keyPadMessage)
+        local myCheck = checksum(messageToSend)
+        messageToSend = string.format("0BKS1%s00%02X", keyPadMessage, myCheck)
+        
+        log(string.format("Test Message: %s", messageToSend))
+
+        if(luup.io.write(messageToSend)==false) then
+          log(string.format("Cannot write request: %s", messageToSend))
+          return false
+        end        
+        
+      </run>
+    </action>
+
+    <action>
+      <serviceId>urn:micasaverde-com:serviceId:AlarmPartition2</serviceId>
+      <name>RequestPanicMode</name>
+      <run>
+        local keyPadMessage
+
+        if(lul_settings.State == "Police") then
+          keyPadMessage = "D"
+        elseif(lul_settings.State == "Fire") then
+          keyPadMessage = "C"
+        elseif(lul_settings.State == "Medical") then 
+          keyPadMessage = "C"
+        else
+          log("Bad Panic Message Received")
+          return
+        end
+
+        local messageToSend = string.format("0AKS1%s0000", keyPadMessage)
+        local myCheck = checksum(messageToSend)
+        messageToSend = string.format("0AKS1%s00%02X", keyPadMessage, myCheck)
+
+        if(luup.io.write(messageToSend)==false) then
+          log(string.format("Cannot write request: %s", messageToSend))
+          return false
+        end        
+      </run>
+
+	  </action>
+	  
+	  
+	  
+	<action>
+      <serviceId>urn:upnp-org:serviceId:SwitchPower1</serviceId>
+      <name>SetTarget</name>
+      <run>
+        local outputSet
+		local outputAltID = luup.attr_get('altid', lul_device)
+		local outputNum = outputAltID:match("^Output%-(%d+)$")
+        if(lul_settings.newTargetValue == "1") then
+			  outputSet = "cn" 
+			    luup.variable_set("urn:upnp-org:serviceId:SwitchPower1", "Status", 1, lul_device)
+		
+			 --luup.variable_set("urn:upnp-org:serviceId:SwitchPower1", "Status", lul_settings.newTargetValue, lul_device)
+        else
+            outputSet = "cf"
+			luup.variable_set("urn:upnp-org:serviceId:SwitchPower1", "Status", 0, lul_device)
+			--luup.variable_set("urn:upnp-org:serviceId:SwitchPower1", "Status", lul_settings.newTargetValue, lul_device)
+         end
+		number = tonumber(outputNum,16)
+		number = string.format("%02d",number)
+        local messageToSend = "0A" .. outputSet .. number .. "00"
+        local myCheck = checksum(messageToSend .. "00" ) --put extra two because checksum() strips off the checksum
+        local hexchecksum = Dec2Hex(myCheck) 
+		if (#hexchecksum ~= 2) then
+			if (#hexchecksum == 1)then
+				hexchecksum = string.format("%02d",hexchecksum)
+			else
+				log("Invalid checksum calculated in output command")
+			end
+		end
+		
+		
+	    messageToSend = messageToSend .. hexchecksum
+
+        if(luup.io.write(messageToSend)==false) then
+          log(string.format("Cannot write request: %s", messageToSend))
+          return false
+		  else 
+		  log("Sent: " .. messageToSend)
+		end        
+		
+      </run>
+  </action>
+  
+
+  <action>
+      <serviceId>urn:micasaverde-com:serviceId:SecuritySensor1</serviceId>
+      <name>SetArmed</name>
+      <run>
+        luup.variable_set("urn:micasaverde-com:serviceId:SecuritySensor1", "Armed", (lul_settings.newArmedValue or "0"), lul_device)
+      </run>
+    </action>
+  </actionList>
+
+</implementation>

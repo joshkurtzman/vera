@@ -1,0 +1,205 @@
+<?xml version="1.0" encoding="ISO-8859-1"?>
+<implementation>
+<functions>
+local SID = {
+	["MASTERSWITCH"]   	= "urn:micasaverde-com:serviceId:ApcMasterSwitch",
+	["OUTLET"] 			= "urn:upnp-org:serviceId:SwitchPower1",
+
+}
+
+local DEVTYPE = {
+	["MASTERSWITCH"]   	= "urn:schemas-micasaverde-com:device:ApcMasterSwitch",
+	["OUTLET"] 			= "urn:schemas-upnp-org:device:BinaryLight:1",
+
+}
+
+
+
+
+	
+		
+ function ApcMasterSwitchStartup(lul_device)
+ 
+ local ipAddress, trash, ipPort = string.match(luup.devices[lul_device].ip, "^(.*)(:(%d+))$")
+
+        if ((ipAddress ~= nil) and (ipAddress ~= "")) then
+            if (ipPort == nil) then
+                ipPort = 23
+            end
+            luup.log(string.format("Running Network Attached ApcMasterSwitch.xml on %s:%s Device# %s, id %s",
+                ipAddress, ipPort, tostring(lul_device), luup.devices[lul_device].id))
+            luup.io.open(lul_device, ipAddress, ipPort)
+			luup.io.write(" ") -- send blank line so that  is ready for us to set all the channels to current value
+			luup.io.write("admin")  -- Change to use variable
+			luup.io.write("***PASSWORD***") --changed to use variable
+        else
+            luup.log("Running Serial Attached I_ApcMasterSwitch.xml #" .. tostring(lul_device)
+                .. " starting with id " .. luup.devices[lul_device].id)
+        end
+
+	 -- -- Fix to check for IP address
+
+	 -- if (luup.io.is_connected(lul_device) == false) then
+		-- luup.log('No port for ArduinoDMX', 1)
+		-- luup.task('Choose the Serial Port for the', 2, 'ArduinoDMX Controller', -1)
+		-- return false
+	  -- end
+	  
+  
+	--local ChildDevices = {}	
+local ChildDevices = {}
+    luup.log("starting device: " .. tostring(lul_device))
+                -- Tell Vera that we are going start creating children --
+    local rootdev = luup.chdev.start(lul_device)   
+    local i = 1
+		while 9 > i do
+			if ChildDevices[tonumber(i)] == nil  then
+			luup.chdev.append(lul_device, rootdev, string.format("Outlet-%s", i), "Outlet-" .. i , "urn:schemas-upnp-org:device:BinaryLight:1", "D_BinaryLight1.xml"
+											,"" , "", false)
+			 i = i + 1
+			end
+		end
+	  -- Initialize Children --
+	luup.log("Call  ApcMasterSwitch initializeChildren")
+
+		for k, v in pairs(luup.devices) do
+			  if(v.device_num_parent == lul_device) then
+				luup.log(string.format("Scanning luup.devices[%s(%s)]", tostring(k), type(k)))
+				  local num = v.id:match("^Outlet%-(%d+)$")
+				  if(num ~= nil) then
+					  ChildDevices[tonumber(num)] = k
+				  else
+							luup.log("Found unexpected Child of Masterswitch #" .. tostring(v))
+				  end
+			end
+		end
+	-- Tell Vera we are done creating children --
+	luup.log("Call CHDev Sync")
+	luup.chdev.sync(lul_device, rootdev)
+	luup.set_failure(false)
+
+	-- luup.call_delay("",10)
+	return true,'ok','ApcMasterSwitch' 
+	  
+end
+	
+
+function SendCommand(outletnum, status)
+local outletstate = "0"
+if status == "on" then 
+	outletstate = "1"
+	else 
+	outletstate = "2"
+	end
+local host, port = "10.10.10.7", 23
+local socket = require("socket")
+local tcp = assert(socket.tcp())
+tcp:settimeout(2)
+tcp:connect(host, port);
+--note the newline below
+tcp:send("admin\r\n");
+tcp:send("***PASSWORD***\r\n");
+tcp:send("1\r\n");
+tcp:send(outletnum .. "\r\n");-- outlet number
+tcp:send("1\r\n"); -- Control outlet
+tcp:send(outletstate .. "\r\n"); -- 1 to turn on - 2 for off -- 3 to reboot
+tcp:send("YES\r\n");
+tcp:send("\r\n");
+tcp:send("\27");
+tcp:send("\27");
+tcp:send("\27");
+tcp:send("\27");
+
+while true do
+  local s, status, partial = tcp:receive()
+  luup.log(s or partial)
+  if status == "closed" or status == "timeout" then break end
+  end
+
+tcp:send("4\r\n");
+--luup.sleep(1)
+
+
+tcp:close()
+
+end
+	
+	 function HandleIncoming(lul_device, lul_data)
+	 
+		luup.log("MasterSwitch-Telnet-Debug: " .. lul_data)
+	 	 
+		 -- if (string.match(lul_data, "SerialToDmx ready")) then
+		 -- luup.sleep("100")
+			 -- for k, v in pairs(luup.devices) do
+				  -- if(v.device_num_parent == lul_device) then
+					 -- if (v.device_type == DEVTYPE.SINGLE) then
+						-- updateSingle(k) 
+						-- luup.log("Initialize DMX Channels Set Single")
+					 -- elseif(v.device_type == DEVTYPE.RGB) then
+						-- UpdateRGB(k) 
+						-- luup.log("Initialize DMX Channels Set RGB")
+					 -- else
+						-- luup.log("Found Child #" .. tostring(v) .. "for Arduino DMX with unhandled type.")
+					 
+					-- end
+				  -- end
+
+				 -- end 
+				 
+			 -- end
+			 
+	end
+			--string match take value from incoming and set variables on devices
+		-- v = ChanToDev[Chan]
+			-- if (v.device_type == DEVTYPE.SINGLE) then
+				 -- local Chan = v.id:match("^DMX1%-(%d+)$") 
+				 -- ChanToDev[Chan]=v
+			-- --TODO Set DMX channel to current values
+			
+			-- elseif(v.device_type == DEVTYPE.SINGLE) then
+				-- local R, G, B = v.id:match("^DMX1%-RGB%-(%d+)-(%d+)-(%d+)$")	
+				-- ChanToDev[R]=v
+				-- ChanToDev[G]=v
+				-- ChanToDev[B]=v
+			-- --TODO Set DMX channel to current device values
+			-- else
+				-- luup.log("Found unexpected Child #" .. tostring(v) .. "for Arduino DMX")
+			-- end
+
+	 
+	  
+</functions>
+
+<startup>ApcMasterSwitchStartup</startup>
+<incoming>
+	<lua>
+		HandleIncoming(lul_device, tostring(lul_data))
+	</lua>
+</incoming>
+ <actionList>
+  <action>
+      <serviceId>urn:upnp-org:serviceId:SwitchPower1</serviceId>
+      <name>SetTarget</name>
+      <run>
+	 	local outletAltID = luup.attr_get('altid', lul_device)
+		local outletNum = outletAltID:match("^Outlet%-(%d+)$")
+        if(lul_settings.newTargetValue == "1") then
+			SendCommand(outletNum, "on") 
+			luup.variable_set("urn:upnp-org:serviceId:SwitchPower1", "Status", 1, lul_device)
+			 --luup.variable_set("urn:upnp-org:serviceId:SwitchPower1", "Status", lul_settings.newTargetValue, lul_device)
+        else
+			SendCommand(outletNum, "off") 
+			luup.variable_set("urn:upnp-org:serviceId:SwitchPower1", "Status", 0, lul_device)
+			--luup.variable_set("urn:upnp-org:serviceId:SwitchPower1", "Status", lul_settings.newTargetValue, lul_device)
+         end
+		 
+		 
+		 return true
+		
+		
+		
+      </run>
+  </action>
+  
+</actionList>
+</implementation>

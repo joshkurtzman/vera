@@ -1,0 +1,66 @@
+<?xml version="1.0"?>
+<scpd xmlns="urn:schemas-upnp-org:service-1-0">
+  <specVersion>
+    <major>1</major>
+    <minor>0</minor>
+  </specVersion>
+  <serviceStateTable>
+  
+    <stateVariable sendEvents="no">
+      <name>ActivePartitions</name>
+      <datatype>string</datatype>
+    </stateVariable>
+
+    <stateVariable sendEvents="no">
+      <name>ActiveZones</name>
+      <datatype>string</datatype>
+    </stateVariable>
+	
+    <stateVariable sendEvents="no">
+      <name>ActiveOutputs</name>
+      <datatype>string</datatype>
+    </stateVariable>
+
+
+	 <stateVariable sendEvents="no">
+	   <name>EventLog</name>
+	   <datatype>string</datatype>
+	 </stateVariable>
+
+	 <stateVariable sendEvents="no">
+	   <name>ZoneInfo</name>
+	   <datatype>string</datatype>
+	 </stateVariable>
+
+
+	<stateVariable sendEvents="no">
+	   <name>OutputInfo</name>
+	   <datatype>string</datatype>
+	 </stateVariable>
+</serviceStateTable>	
+  <actionList>
+
+    <action>
+      <name>SendCommand</name>
+      <argumentList>
+
+        <argument>
+          <name>Command</name>
+          <direction>in</direction>
+        </argument>
+
+        <argument>
+          <name>Data</name>
+          <direction>in</direction>
+
+        </argument>
+      </argumentList>
+    </action>
+
+
+	<action>
+      <name>UpdateDeviceStatus</name>
+        </action>
+	</actionList>
+
+</scpd>

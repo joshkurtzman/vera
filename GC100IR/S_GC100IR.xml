@@ -1,0 +1,38 @@
+<?xml version="1.0"?>
+<scpd xmlns="urn:schemas-upnp-org:service-1-0">
+  <specVersion>
+    <major>1</major>
+    <minor>0</minor>
+  </specVersion>
+  
+	<serviceStateTable>
+		<stateVariable sendEvents="no">
+			<name>ip</name>
+			<datatype>string</datatype>
+		</stateVariable>
+	</serviceStateTable>	
+  
+  <actionList>
+    <action>
+      <name>SetTarget</name>
+    </action>
+    <action>
+      <name>PressButton</name>
+	  <argumentList>
+		<argument>
+			  <name>ButtonName</name>
+			  <direction>in</direction>
+			  <relatedStateVariable>string</relatedStateVariable>
+		</argument>
+		
+		</argumentList>
+    </action>
+	<action>
+      <name>TurnOn</name>
+    </action>
+	<action>
+      <name>TurnOff</name>
+    </action>
+		
+  </actionList>
+</scpd>

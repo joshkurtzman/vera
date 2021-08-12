@@ -1,0 +1,120 @@
+Device Type      urn:schemas-micasaverde-com:device:AlarmPanel:1
+
+Device File: D_VistaAlarmPanel2.xml
+IMPL File   I_VistaAlarmPanel2.xml
+
+ZoneInfo
+3,Garage Motion;4,Office Motion;5,Test;17,Front Door;18,Garage Side Door;19,Mud Room Door;20,Back Patio Door;21,Garage Stairs;22,Laundry Room Door;23,Basement Door;24,Office Door;25,West Garage Door;26,East Garage Door;27,Rear Garage Door;33,Master Bedroom Windows;34,Kitchen Window;35,Living Room Windows;36,North Bedroom Window;37,West Bedroom Window;38,Master Bathroom Windows;39,Office Windows;40,Loft Windows
+
+OutputInfo
+1,West Garage Door Opener;2,East Garage Door Opener;3,Rear Garage Door Opener
+
+
+39, 40, 42, 44, 47, 48, 49
+
+
+
+-- Check door code
+local Devices = {39, 40, 42, 44, 47, 48, 49} --list of devices to check if they're open
+local period = 30 --time in minutes to wait
+local SS_SID = "urn:micasaverde-com:serviceId:SecuritySensor1" 
+local retval = false --don't run scene by default
+
+for i,z in ipairs(Devices) do 
+	if (luup.variable_get(SS_SID, "Armed", z) == "1") then
+		local tripped = luup.variable_get(SS_SID, "Tripped", z)
+		local lastTrip = luup.variable_get(SS_SID, "LastTrip", z) or os.time()
+		lastTrip = tonumber(lastTrip)
+
+		if ((tripped == "1") and ((os.difftime (os.time(), lastTrip) / 60) >= period)) then
+				retval = true --Sensor is tripped and has been longer than period
+		end
+	end
+end
+return retval
+
+
+
+
+-- Window Code
+--
+local period = 2 --time in minutes to wait
+local SS_SID = "urn:micasaverde-com:serviceId:SecuritySensor1"
+local retval = false --don't run scene by default
+local mode = luup.variable_get("urn:upnp-org:serviceId:HVAC_UserOperatingMode1","ModeStatus", 449 )
+
+if not  (mode == "Off") then
+	for i,z in pairs(luup.devices) do 
+		if  (z.device_type == "urn:schemas-micasaverde-com:device:DoorSensor:1") and (string.match(z.description,"Wind")) then
+			local tripped = luup.variable_get(SS_SID, "Tripped", z.udn) 
+			local lastTrip = luup.variable_get(SS_SID, "LastTrip", z.udn) or os.time()
+			lastTrip = tonumber(lastTrip)
+			if ((tripped == "1") and ((os.difftime (os.time(), lastTrip) / 60) >= period)) then
+					retval = true --Sensor is tripped and has been longer than period
+					
+				end
+		
+		end
+		
+	end
+end
+
+
+if (retval == true) then
+  luup.call_action("urn:dcineco-com:serviceId:MSwitch1", "SetStatus2", {newStatus2 = "1"}, 182)
+ else
+  luup.call_action("urn:dcineco-com:serviceId:MSwitch1", "SetStatus2", {newStatus2 = "0"}, 182)
+ end
+ 
+ 
+
+
+
+
+
+
+
+
+
+
+--- Restart porch light code 
+local dID = 99       
+local allow = false
+local status = luup.variable_get("urn:rts-services-com:serviceId:DayTime","Status",dID)
+return ((status == "1") == allow) 
+
+
+
+
+
+----PDU request 
+
+require('ltn12')
+http = require("socket.http")
+local response_body = {}
+local request_body = "control=On&Submit=Apply"
+local request_length = string.len(request_body)
+mime = require("mime")
+http.TIMEOUT = 5
+r, c, h = http.request {
+  method = "POST",
+  url = "http://10.10.10.7/Forms/outlcfg1?1",
+  port = 80,
+  source = ltn12.source.string(request_body),
+  sink= ltn12.sink.table(response_body),
+  headers = {
+		["Content-Type"] = "application/x-www-form-urlencoded",
+		["Authorization"] = "Basic " .. (mime.b64("admin:***PASSWORD***")),
+		["Content-Length"] = request_length,
+        ["connection"] = "keep-alive"
+}
+}
+
+for k, v in pairs( response_body ) do
+   luup.log(k, v)
+end
+luup.log(r)
+luup.log(c)
+luup.log(h)
+
+

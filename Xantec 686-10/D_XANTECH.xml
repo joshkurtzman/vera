@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="ISO-8859-1"?>
+<root >
+	<specVersion>
+	</specVersion>
+	<device>
+		<deviceType>urn:schemas-micasaverde-com:device:IrDevice:1</deviceType>
+		<avType>0</avType>
+		<remote>0</remote>
+		<friendlyName>Xantech Speaker Selector</friendlyName>
+		    <handleChildren>1</handleChildren>
+<serviceList>
+<service>
+	<serviceType>urn:micasaverde-com:service:XANTECH:1</serviceType>
+	<serviceId>urn:micasaverde-com:serviceId:XANTECH</serviceId>
+	<SCPDURL>S_XANTECH.xml</SCPDURL>
+</service>
+</serviceList>
+</device>
+</root>

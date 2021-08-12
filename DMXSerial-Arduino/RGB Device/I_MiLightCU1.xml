@@ -1,0 +1,640 @@
+<?xml version="1.0"?>
+<implementation>
+  <functions>
+	
+	local colors = {{blue = 10, cyan = 65, green = 100, yellow = 135, red = 180, magenta = 220},{blue = 10, cyan = 65, green = 100, yellow = 135, red = 180, magenta = 220}}
+	ipaddr = ""
+	ipport = ""
+	busy = false
+	oNKA = False
+	oSKA = False
+	oRDL = False
+	oNRR = False
+	oTDM = False
+	oFMR = False
+	oICT = 50
+	oODT = 1000
+	oMDL = 7
+	oCLT = 1
+	
+	socket = require("socket")
+
+	function initstatus(lul_device)
+		
+		if luup.version_major == 7 then useUI7json() end
+		
+		if not getIP(lul_device) then return false end
+
+		local opts = luup.variable_get("urn:dcineco-com:serviceId:MiLightCU1","Options", lul_device)
+		if opts == nil then
+			opts = "RDL"
+			luup.variable_set("urn:dcineco-com:serviceId:MiLightCU1","Options",opts,lul_device)
+		end
+		getOptions(opts)
+
+		local hue = luup.variable_get("urn:dcineco-com:serviceId:MiLightCU1","Hue", lul_device)
+		if hue == nil then
+			luup.variable_set("urn:dcineco-com:serviceId:MiLightCU1","Hue","0",lul_device)
+		end
+
+		local rgb = luup.variable_get("urn:dcineco-com:serviceId:MiLightCU1","RGBmode", lul_device)
+		if rgb == nil then
+			luup.variable_set("urn:dcineco-com:serviceId:MiLightCU1","RGBmode","0",lul_device)
+		end
+
+		local white = luup.variable_get("urn:dcineco-com:serviceId:MiLightCU1","Whitemode", lul_device)
+		if white == nil then
+			luup.variable_set("urn:dcineco-com:serviceId:MiLightCU1","Whitemode","0",lul_device)
+		end
+
+		local fx = luup.variable_get("urn:dcineco-com:serviceId:MiLightCU1","EffectsMode", lul_device)
+		if fx == nil then
+			luup.variable_set("urn:dcineco-com:serviceId:MiLightCU1","EffectsMode","0",lul_device)
+		end
+
+		local rate = luup.variable_get("urn:dcineco-com:serviceId:MiLightCU1","EffectsRate", lul_device)
+		if rate == nil then
+			luup.variable_set("urn:dcineco-com:serviceId:MiLightCU1","EffectsRate","0",lul_device)
+		end
+
+		local icon = luup.variable_get("urn:dcineco-com:serviceId:MiLightCU1","IconState", lul_device)
+		if icon == nil then
+			luup.variable_set("urn:dcineco-com:serviceId:MiLightCU1","IconState","0",lul_device)
+		end
+
+		local target = luup.variable_get("urn:upnp-org:serviceId:SwitchPower1","Target", lul_device)
+		if target == nil then
+			luup.variable_set("urn:upnp-org:serviceId:SwitchPower1","Target","0",lul_device)
+		end
+		local status = luup.variable_get("urn:upnp-org:serviceId:SwitchPower1","Status", lul_device)
+		if status == nil then
+			luup.variable_set("urn:upnp-org:serviceId:SwitchPower1","Status","0",lul_device)
+		end
+		local lltarget = luup.variable_get("urn:upnp-org:serviceId:Dimming1","LoadLevelTarget", lul_device)
+		if lltarget == nil then
+			luup.variable_set("urn:upnp-org:serviceId:Dimming1","LoadLevelTarget","0",lul_device)
+		end
+		local llstatus = luup.variable_get("urn:upnp-org:serviceId:Dimming1","LoadLevelStatus", lul_device)
+		if llstatus == nil then
+			luup.variable_set("urn:upnp-org:serviceId:Dimming1","LoadLevelStatus","0",lul_device)
+		end
+		local minlevel = luup.variable_get("urn:upnp-org:serviceId:Dimming1","MinLevel", lul_device)
+		if minlevel == nil then
+			luup.variable_set("urn:upnp-org:serviceId:Dimming1","MinLevel","0",lul_device)
+		end
+
+		if not oNKA then luup.call_delay("startKeepAlive",30,lul_device) end
+		busy = false
+
+		if luup.version_major == 7 then luup.set_failure(0, lul_device) end
+	end
+
+	function useUI7json()
+		local lfs = require "lfs"
+		local ui5json = "/etc/cmh-ludl/D_MiLightCU1.json.lzo"
+		local ui7json = "/etc/cmh-ludl/D_MiLightCU1_UI7.json.lzo"
+		if lfs.attributes(ui7json,"size") ~= lfs.attributes(ui5json,"size") then
+			os.execute('cp -p '..ui7json..' '.. ui5json)
+		end
+	end
+
+	function getIP(lul_dev)
+        local ip = luup.attr_get("ip",lul_dev)
+        if (ip == nil) or (#ip == 0) then
+			ip = luup.variable_get("urn:dcineco-com:serviceId:MiLightCU1","IPaddr",lul_dev)
+			local ipp = luup.variable_get("urn:dcineco-com:serviceId:MiLightCU1","IPport",lul_dev)
+			if (ip == nil) or (#ip == 0) then
+				luup.task("ip address not entered!", 2, "MiLightCU", -1)
+				luup.log("MiLightCU: ip address not set.")
+				return false
+			end
+			if ipp ~= nil then ip = ip .. ":" .. ipp end
+			luup.attr_set("ip",ip,lul_dev)
+			luup.variable_set("urn:dcineco-com:serviceId:MiLightCU1","IPaddr","",lul_dev)
+			luup.variable_set("urn:dcineco-com:serviceId:MiLightCU1","IPport","",lul_dev)
+        end
+
+        ip = string.gsub(ip," ","")
+        ipaddr, ipport = string.match(ip,"(%d+%.%d+%.%d+%.%d+)%:?(%d*)")
+        if (ipaddr == nil) or (#ipaddr == 0) then
+			luup.task("Invalid ip address: " .. ip, 2, "MiLightCU", -1)
+			luup.log("MiLightCU: Invalid ip address: " .. ip)
+			return false
+        end
+
+        if (ipport == nil) or (#ipport == 0) then
+			ipport = 8899
+			luup.attr_set("ip",ipaddr .. ":" .. ipport,lul_dev)
+			luup.log("MiLightCU: Port not specified, " .. ipport .. " assumed.")
+        end
+		return true
+     end
+
+	function getOptions(sopt)
+		if sopt == nil then return end
+		sopt = string.lower(string.gsub(sopt," ",""))
+		oNKA = (string.find(sopt,"nka") ~= nil)
+		oSKA = (string.find(sopt,"ska") ~= nil)
+		oRDL = (string.find(sopt,"rdl") ~= nil)
+		oNRR = (string.find(sopt,"nrr") ~= nil)
+		oTDM = (string.find(sopt,"tdm") ~= nil)
+		oFMR = (string.find(sopt,"fmr") ~= nil)
+		local ict = string.match(sopt,"ict=(%d+)")
+		if ict ~= nil then oICT = tonumber(ict,10) else oICT = 50 end
+		local odt = string.match(sopt,"odt=(%d+)")
+		if odt ~= nil then oODT = tonumber(odt,10) else oODT = 1000 end
+		local mdl = string.match(sopt,"mdl=(%d+)")
+		if mdl ~= nil then oMDL = tonumber(mdl,10) else oMDL = 7 end
+		local clt = string.match(sopt,"clt=(%d+)")
+		if clt ~= nil then oCLT = tonumber(clt,10) else oCLT = 1 end
+		if oCLT > 2 then oCLT = 2 end
+	end
+	
+	function startKeepAlive(deviceNum)
+		local lowest = nil
+
+		for deviceNo,d in pairs(luup.devices) do
+			s, e, dtype = string.find(d.device_type,":(%w*):1$")
+			if dtype == "DimmableLightW" then
+				ip = string.match(luup.attr_get("ip",deviceNo),"(%d+%.%d+%.%d+%.%d+)")
+				if ip == nil then
+					ip = luup.variable_get("urn:dcineco-com:serviceId:MiLightWU1","IPaddr",deviceNo) or ""
+				end
+			elseif dtype == "DimmableLightC" then
+				ip = string.match(luup.attr_get("ip",deviceNo),"(%d+%.%d+%.%d+%.%d+)")
+				if ip == nil then
+					ip = luup.variable_get("urn:dcineco-com:serviceId:MiLightCU1","IPaddr",deviceNo) or ""
+				end
+			elseif dtype == "DimmableLightRGBW" then
+				ip = string.match(luup.attr_get("ip",deviceNo),"(%d+%.%d+%.%d+%.%d+)")
+				if ip == nil then
+					ip = luup.variable_get("urn:dcineco-com:serviceId:MiLightRGBW1","IPaddr",deviceNo) or ""
+				end
+			else ip = ""
+			end
+			if ip == ipaddr then
+				if lowest == nil or lowest > deviceNo then lowest = deviceNo end
+			end
+		end
+
+		if lowest == tonumber(deviceNum,10) then
+			luup.log("MiLightCU1: KeepAlive started for " .. ipaddr)
+			keepAlive()
+		end
+	end
+
+	function keepAlive()
+		if not busy then
+			busy = true
+			local ska = socket.udp()
+			if oSKA then
+				ska:sendto(string.char(0x55), ipaddr, ipport)
+			else
+				ska:sendto(string.char(0x30, 0x00, 0x55), ipaddr, ipport)
+			end
+			ska:close()
+			luup.sleep(oICT)
+			busy = false
+		end
+		if not oNKA then luup.call_delay("keepAlive",60,"") end
+	end
+
+	local function sendUDP(code)
+		local s = socket.udp()
+		s:sendto(code, ipaddr, ipport)
+		-- luup.log(ipaddr .. ":" .. ipport .. " UDP " .. string.format('%02x %02x %02x',string.byte(code,1,3)))
+		s:close()
+	end
+	
+	local function setLevel(lul_dev, newlevel)
+		local dim, cmd
+		local llstatus = luup.variable_get("urn:upnp-org:serviceId:Dimming1","LoadLevelStatus",lul_dev)
+		local llev = tonumber(llstatus,10)
+		local level = tonumber(newlevel,10)
+		if level > 100 then level = 100 end
+		if 0 > level then level = 0 end
+		if level ~= 0 and oMDL > level then level = oMDL end
+		if level >= llev then
+			dim = math.floor(((level-llev-4)/11) + 0.5)
+			cmd = 0x23
+		else
+ 			dim = math.floor(((llev-level-4)/11) + 0.5)
+			cmd = 0x24
+		end
+		sendUDP(string.char(0x22, 0x00, 0x55))
+		
+		while dim > 0 do
+			luup.sleep(oICT)
+			sendUDP(string.char(cmd, 0x00, 0x55))
+			dim = dim - 1
+		end
+
+		if level == 0 then
+			luup.sleep(oODT)
+			sendUDP(string.char(0x21, 0x00, 0x55))
+		end
+
+		return level
+	end
+
+	local function resetLevel(lul_dev)
+			local cmd1,cmd2, ncmds
+			local lls = tonumber((luup.variable_get("urn:upnp-org:serviceId:Dimming1","LoadLevelStatus",lul_dev) or "0"),10)
+
+			if lls >= 70 then
+				cmd1 = 0x23
+				cmd2 = 0x24
+				ncmds = math.floor(((100-lls)/11) + 0.5)
+			else
+				cmd1 = 0x24
+				cmd2 = 0x23
+				ncmds = math.floor(((lls-7)/11) + 0.5)
+			end
+			
+			for i = 1,10 do
+				luup.sleep(oICT)
+				sendUDP(string.char(cmd1, 0x00, 0x55))
+			end
+
+			while ncmds > 0 do
+				luup.sleep(oICT)
+				sendUDP(string.char(cmd2, 0x00, 0x55))
+				ncmds = ncmds - 1
+			end
+	end
+	
+	local function setOnOff(lul_dev, target)
+		local code
+		if target == "0" then
+ 			code = 0x21
+		else
+			code = 0x22
+			local lls = luup.variable_get("urn:upnp-org:serviceId:Dimming1","LoadLevelStatus",lul_dev)
+			if oMDL > tonumber(lls,10) then luup.variable_set("urn:upnp-org:serviceId:Dimming1", "LoadLevelStatus",oMDL, lul_device) end
+		end
+		sendUDP(string.char(code, 0x00, 0x55))
+	end
+
+	local function setMode(lul_dev, newmode, oldmode)
+		local cmd, ncmds
+		if (oldmode > 20) or (1 > oldmode) then oldmode = 0 end
+
+		sendUDP(string.char(0x22, 0x00, 0x55))
+
+		local rgb = luup.variable_get("urn:dcineco-com:serviceId:MiLightCU1","RGBmode",lul_dev)
+		if rgb == "1" then
+			luup.sleep(oICT)
+			sendUDP(string.char(0x28, 0x00, 0x55))
+			if oldmode == newmode then return end
+		end
+		
+		if (oldmode == 0) or oFMR then
+			if newmode > 10 then
+				cmd = 0x27
+				oldmode = 20
+			else
+				cmd = 0x28
+				oldmode = 1
+			end
+			for i=1,21 do
+				luup.sleep(oICT)
+				sendUDP(string.char(cmd, 0x00, 0x55))
+			end	
+		end
+
+		if newmode > oldmode then
+			ncmds = newmode - oldmode
+			cmd = 0x27
+		elseif oldmode > newmode then
+			ncmds = oldmode - newmode
+			cmd = 0x28
+		else
+			return
+		end
+
+		while ncmds > 0 do
+			luup.sleep(oICT)
+			sendUDP(string.char(cmd, 0x00, 0x55))
+			ncmds = ncmds - 1
+		end
+	end
+	
+	local function setRate(lul_dev, newrate)
+		local cmd, ncmds
+		local oldrate = tonumber((luup.variable_get("urn:dcineco-com:serviceId:MiLightCU1","EffectsRate",lul_dev) or "0"),10)
+		if (oldrate > 9) or (1 > oldrate) then oldrate = 0 end
+
+		sendUDP(string.char(0x22, 0x00, 0x55))
+
+		if (oldrate == 0) or oNRR then
+			for i=1,9 do
+				luup.sleep(oICT)
+				sendUDP(string.char(0x26, 0x00, 0x55))
+			end	
+			oldrate = 1
+		end
+
+		if newrate > oldrate then
+			ncmds = newrate - oldrate
+			cmd = 0x25
+		elseif oldrate > newrate then
+			ncmds = oldrate - newrate
+			cmd = 0x26
+		else
+			return
+		end
+
+		while ncmds > 0 do
+			luup.sleep(oICT)
+			sendUDP(string.char(cmd, 0x00, 0x55))
+			ncmds = ncmds - 1
+		end
+	end
+	
+	local function resetRate(lul_dev)
+		local rate = tonumber((luup.variable_get("urn:dcineco-com:serviceId:MiLightCU1","EffectsRate",lul_dev) or "0"),10)
+		if 1 > rate then rate = 1 end
+		if rate > 9 then rate = 9 end
+
+		for i = 1, 9 do
+			luup.sleep(oICT)
+			sendUDP(string.char(0x26, 0x00, 0x55))
+		end	
+	
+		while rate > 1 do
+			luup.sleep(oICT)
+			sendUDP(string.char(0x25, 0x00, 0x55))
+			rate = rate - 1
+		end
+	end
+
+	</functions>
+
+  <startup>initstatus</startup>
+
+  <actionList>
+   
+    <action>
+      <serviceId>urn:upnp-org:serviceId:Dimming1</serviceId>
+      <name>SetLoadLevelTarget</name>
+      <job>
+			if busy then luup.sleep(100) end
+			busy = true
+			luup.variable_set("urn:upnp-org:serviceId:Dimming1", "LoadLevelTarget", lul_settings.newLoadlevelTarget, lul_device)
+			local level = setLevel(lul_device,lul_settings.newLoadlevelTarget)
+			luup.variable_set("urn:upnp-org:serviceId:Dimming1", "LoadLevelStatus", level, lul_device)
+			if level == 0 then
+				luup.variable_set("urn:upnp-org:serviceId:SwitchPower1", "Status", 0, lul_device)
+				luup.variable_set("urn:dcineco-com:serviceId:MiLightCU1", "IconState", 0, lul_device)
+			else
+				luup.variable_set("urn:upnp-org:serviceId:SwitchPower1", "Status", 1, lul_device)
+				luup.variable_set("urn:dcineco-com:serviceId:MiLightCU1", "IconState", level, lul_device)
+			end
+			luup.sleep(oICT)
+			busy = false
+			return 4,nil
+      </job>
+    </action>
+
+    <action>
+      <serviceId>urn:upnp-org:serviceId:SwitchPower1</serviceId>
+      <name>SetTarget</name>
+      <job>
+			if busy then luup.sleep(100) end
+			busy = true
+			luup.variable_set("urn:upnp-org:serviceId:SwitchPower1", "Target", lul_settings.newTargetValue, lul_device)
+			setOnOff(lul_device, lul_settings.newTargetValue)
+			luup.variable_set("urn:upnp-org:serviceId:SwitchPower1", "Status", lul_settings.newTargetValue, lul_device)
+			if lul_settings.newTargetValue == "0" then
+				luup.variable_set("urn:dcineco-com:serviceId:MiLightCU1", "IconState", 0, lul_device)
+				if oTDM then luup.variable_set("urn:upnp-org:serviceId:Dimming1", "LoadLevelStatus", 0, lul_device) end
+			else
+				local lls
+				if oTDM then
+					lls = luup.variable_get("urn:upnp-org:serviceId:Dimming1","LoadLevelTarget",lul_device)
+					luup.variable_set("urn:upnp-org:serviceId:Dimming1", "LoadLevelStatus", lls, lul_device)
+				else
+					lls = luup.variable_get("urn:upnp-org:serviceId:Dimming1","LoadLevelStatus",lul_device)
+				end
+				luup.variable_set("urn:dcineco-com:serviceId:MiLightCU1", "IconState", lls, lul_device)
+			end
+			luup.sleep(oICT)
+			busy = false
+			return 4,nil
+	  </job>
+    </action>
+ 
+    <action>
+      <serviceId>urn:dcineco-com:serviceId:MiLightCU1</serviceId>
+      <name>SetHue</name>
+      <job>
+			if busy then luup.sleep(100) end
+			local status = luup.variable_get("urn:upnp-org:serviceId:SwitchPower1","Status",lul_device)
+			if status == "0" then return 4,nil end
+			busy = true
+			local newhue = tonumber((lul_settings.newHue or "0"),10)
+			if 0 > newhue then newhue = 0 end
+			if newhue > 255 then newhue = 255 end 
+			sendUDP(string.char(0x20, newhue, 0x55))
+			local rgb = luup.variable_get("urn:dcineco-com:serviceId:MiLightCU1","RGBmode",lul_dev)
+			if rgb == "0" then
+				resetLevel(lul_device)
+				luup.variable_set("urn:dcineco-com:serviceId:MiLightCU1","RGBmode", 1,lul_device)
+				luup.variable_set("urn:dcineco-com:serviceId:MiLightCU1","Whitemode", 0,lul_device)
+			end
+			luup.variable_set("urn:dcineco-com:serviceId:MiLightCU1","Hue", newhue,lul_device)
+			luup.sleep(oICT)
+			busy = false
+			return 4,nil
+	  </job>
+    </action>
+ 
+    <action>
+      <serviceId>urn:dcineco-com:serviceId:MiLightCU1</serviceId>
+      <name>SetColor</name>
+      <job>
+			if busy then luup.sleep(100) end
+			local status = luup.variable_get("urn:upnp-org:serviceId:SwitchPower1","Status",lul_device)
+			if status == "0" then return 4,nil end
+			busy = true
+			local setcolor = lul_settings.newColor
+			if setcolor == nil or #setcolor == 0 then return end
+			local newhue = colors[oCLT][string.lower(setcolor)]
+			if newhue == nil then
+				luup.log("MiLightCU1: Unknown color: " .. setcolor)
+				return 4,nil
+			end
+			sendUDP(string.char(0x20, newhue, 0x55))
+			local rgb = luup.variable_get("urn:dcineco-com:serviceId:MiLightCU1","RGBmode",lul_device)
+			if rgb == "0" then
+				resetLevel(lul_device)
+				luup.variable_set("urn:dcineco-com:serviceId:MiLightCU1","RGBmode", 1,lul_device)
+				luup.variable_set("urn:dcineco-com:serviceId:MiLightCU1","Whitemode", 0,lul_device)
+			end
+			luup.variable_set("urn:dcineco-com:serviceId:MiLightCU1","Hue", newhue,lul_device)
+			luup.sleep(oICT)
+			busy = false
+			return 4,nil
+	  </job>
+    </action>
+ 
+    <action>
+      <serviceId>urn:dcineco-com:serviceId:MiLightCU1</serviceId>
+      <name>SetEffectsMode</name>
+      <job>
+			if busy then luup.sleep(100) end
+			local status = luup.variable_get("urn:upnp-org:serviceId:SwitchPower1","Status",lul_device)
+			if status == "0" then return 4,nil end
+			busy = true
+			local oldmode = tonumber((luup.variable_get("urn:dcineco-com:serviceId:MiLightCU1","EffectsMode",lul_dev) or "0"),10)
+			local newmode = tonumber((lul_settings.newEffectsMode or "0"),10)
+			if 1 > newmode then
+				luup.variable_set("urn:dcineco-com:serviceId:MiLightCU1","EffectsMode", 0,lul_device)
+				newmode = 1
+			end
+			if newmode > 20 then newmode = 20 end 
+			setMode(lul_device, newmode, oldmode)
+			
+			local rgb = luup.variable_get("urn:dcineco-com:serviceId:MiLightCU1","RGBmode",lul_dev)
+			if ((rgb == "1") or (newmode ~= oldmode)) and ((newmode == 1) or oRDL) then
+				resetLevel(lul_device)
+			end
+			
+			if (newmode ~= 1) and (newmode ~= oldmode) and (not oNRR) then
+				resetRate(lul_device)
+			end
+			
+			luup.variable_set("urn:dcineco-com:serviceId:MiLightCU1","RGBmode", 0,lul_device)
+			luup.variable_set("urn:dcineco-com:serviceId:MiLightCU1","EffectsMode", newmode,lul_device)
+			if newmode == 1 then 
+				luup.variable_set("urn:dcineco-com:serviceId:MiLightCU1","Whitemode", 1,lul_device)
+			else
+				luup.variable_set("urn:dcineco-com:serviceId:MiLightCU1","Whitemode", 0,lul_device)
+			end
+			luup.sleep(oICT)
+			busy = false
+			return 4,nil
+	  </job>
+    </action>
+ 
+    <action>
+      <serviceId>urn:dcineco-com:serviceId:MiLightCU1</serviceId>
+      <name>SetWhiteMode</name>
+      <job>
+			if busy then luup.sleep(100) end
+			local status = luup.variable_get("urn:upnp-org:serviceId:SwitchPower1","Status",lul_device)
+			if status == "0" then return 4,nil end
+			busy = true
+			local oldmode = tonumber((luup.variable_get("urn:dcineco-com:serviceId:MiLightCU1","EffectsMode",lul_dev) or "0"),10)
+			local newmode = 1
+			setMode(lul_device, newmode, oldmode)
+			
+			local rgb = luup.variable_get("urn:dcineco-com:serviceId:MiLightCU1","RGBmode",lul_dev)
+			if (rgb == "1") or (newmode ~= oldmode) then resetLevel(lul_device) end
+			
+			luup.variable_set("urn:dcineco-com:serviceId:MiLightCU1","RGBmode", 0,lul_device)
+			luup.variable_set("urn:dcineco-com:serviceId:MiLightCU1","EffectsMode", newmode,lul_device)
+			luup.variable_set("urn:dcineco-com:serviceId:MiLightCU1","Whitemode", 1,lul_device)
+			luup.sleep(oICT)
+			busy = false
+			return 4,nil
+	  </job>
+    </action>
+ 
+    <action>
+      <serviceId>urn:dcineco-com:serviceId:MiLightCU1</serviceId>
+      <name>SetEffectsRate</name>
+      <job>
+			if busy then luup.sleep(100) end
+			local status = luup.variable_get("urn:upnp-org:serviceId:SwitchPower1","Status",lul_device)
+			if status == "0" then return 4,nil end
+			busy = true
+			local newrate = tonumber((lul_settings.newEffectsRate or "0"),10)
+			if 1 > newrate then
+				luup.variable_set("urn:dcineco-com:serviceId:MiLightCU1","EffectsRate", 0,lul_device)
+				newrate = 1
+			end
+			if newrate > 9 then newrate = 9 end 
+			setRate(lul_device, newrate)
+			luup.variable_set("urn:dcineco-com:serviceId:MiLightCU1","EffectsRate", newrate,lul_device)
+			luup.sleep(oICT)
+			busy = false
+			return 4,nil
+	  </job>
+    </action>
+ 
+    <action>
+      <serviceId>urn:dcineco-com:serviceId:MiLightCU1</serviceId>
+      <name>Sync</name>
+      <job>
+			if busy then luup.sleep(100) end
+			busy = true
+			local status = luup.variable_get("urn:upnp-org:serviceId:SwitchPower1","Status",lul_device)
+			local rgb = luup.variable_get("urn:dcineco-com:serviceId:MiLightCU1","RGBmode",lul_dev)
+			sendUDP(string.char(0x22, 0x00, 0x55))
+			luup.sleep(oICT)
+			if rgb == "1" then
+				local newhue = tonumber((lul_settings.newHue or "0"),10)
+				if 0 > newhue then newhue = 0 end
+				if newhue > 255 then newhue = 255 end 
+				sendUDP(string.char(0x20, newhue, 0x55))
+				resetLevel(lul_device)
+				luup.variable_set("urn:dcineco-com:serviceId:MiLightCU1","EffectsMode", 0,lul_device)
+			else	
+				local mode = tonumber((luup.variable_get("urn:dcineco-com:serviceId:MiLightCU1","EffectsMode",lul_dev) or "0"),10)
+				setMode(lul_device, mode, 0)
+				if (mode == 1) then
+					resetLevel(lul_device)
+				else
+					if oRDL then resetLevel(lul_device) end
+					if not oNRR then resetRate(lul_device) end
+				end
+			end
+			
+			if status == "0" then
+				luup.sleep(oICT)
+				sendUDP(string.char(0x21, 0x00, 0x55))
+			end
+			luup.sleep(oICT)
+			busy = false
+			return 4,nil
+      </job>
+    </action>
+ 
+    <action>
+      <serviceId>urn:dcineco-com:serviceId:MiLightCU1</serviceId>
+      <name>Enroll</name>
+      <job>
+			if busy then luup.sleep(100) end
+			busy = true
+			sendUDP(string.char(0x25, 0x00, 0x55))
+			luup.sleep(oICT)
+			busy = false
+			local status = luup.variable_get("urn:upnp-org:serviceId:SwitchPower1","Status",lul_device)
+			if status == "0" then return end
+			local rate = tonumber(luup.variable_get("urn:dcineco-com:serviceId:MiLightCU1","EffectsRate", lul_device),10)
+			if 9 > rate then
+				rate = rate + 1
+				luup.variable_set("urn:dcineco-com:serviceId:MiLightCU1","EffectsRate", rate,lul_device)
+			end
+			return 4,nil
+      </job>
+    </action>
+ 
+    <action>
+      <serviceId>urn:dcineco-com:serviceId:MiLightCU1</serviceId>
+      <name>SetOptions</name>
+      <job>
+			local newopts = lul_settings.newOptions or ""
+			luup.variable_set("urn:dcineco-com:serviceId:MiLightCU1", "Options", newopts, lul_device)
+			local oldNKA = oNKA
+			getOptions(newopts)
+			if oldNKA and (not oNKA) then keepAlive() end
+			return 4,nil
+      </job>
+    </action>
+
+  </actionList>
+
+</implementation>
+ 
